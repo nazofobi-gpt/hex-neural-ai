@@ -1,0 +1,653 @@
+{
+  "protocolVersion": "0.1",
+  "id": "example.recursive-seven-cell-cluster",
+  "version": "0.1.0",
+  "nodes": [
+    {
+      "id": "cluster-1",
+      "kind": "cluster",
+      "level": 0,
+      "parentId": null,
+      "coordinate": {
+        "q": 0,
+        "r": 0
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cluster-1"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "cell-center",
+      "kind": "compute",
+      "level": 1,
+      "parentId": "cluster-1",
+      "coordinate": {
+        "q": 0,
+        "r": 0
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cell-center"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "cell-e",
+      "kind": "compute",
+      "level": 1,
+      "parentId": "cluster-1",
+      "coordinate": {
+        "q": 1,
+        "r": 0
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cell-e"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "cell-ne",
+      "kind": "compute",
+      "level": 1,
+      "parentId": "cluster-1",
+      "coordinate": {
+        "q": 1,
+        "r": -1
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cell-ne"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "cell-nw",
+      "kind": "compute",
+      "level": 1,
+      "parentId": "cluster-1",
+      "coordinate": {
+        "q": 0,
+        "r": -1
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cell-nw"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "cell-w",
+      "kind": "compute",
+      "level": 1,
+      "parentId": "cluster-1",
+      "coordinate": {
+        "q": -1,
+        "r": 0
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cell-w"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "cell-sw",
+      "kind": "compute",
+      "level": 1,
+      "parentId": "cluster-1",
+      "coordinate": {
+        "q": -1,
+        "r": 1
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cell-sw"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "cell-se",
+      "kind": "compute",
+      "level": 1,
+      "parentId": "cluster-1",
+      "coordinate": {
+        "q": 0,
+        "r": 1
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "cell-se"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    }
+  ],
+  "connections": [],
+  "clusters": [
+    {
+      "id": "cluster-1",
+      "childNodeIds": [
+        "cell-center",
+        "cell-e",
+        "cell-ne",
+        "cell-nw",
+        "cell-w",
+        "cell-sw",
+        "cell-se"
+      ],
+      "childConnectionIds": [],
+      "macroFaces": [
+        {
+          "index": 0,
+          "exposedChildFaces": [],
+          "semanticChannels": [],
+          "projectionPopulation": []
+        },
+        {
+          "index": 1,
+          "exposedChildFaces": [],
+          "semanticChannels": [],
+          "projectionPopulation": []
+        },
+        {
+          "index": 2,
+          "exposedChildFaces": [],
+          "semanticChannels": [],
+          "projectionPopulation": []
+        },
+        {
+          "index": 3,
+          "exposedChildFaces": [],
+          "semanticChannels": [],
+          "projectionPopulation": []
+        },
+        {
+          "index": 4,
+          "exposedChildFaces": [],
+          "semanticChannels": [],
+          "projectionPopulation": []
+        },
+        {
+          "index": 5,
+          "exposedChildFaces": [],
+          "semanticChannels": [],
+          "projectionPopulation": []
+        }
+      ],
+      "summarizedStateRef": null
+    }
+  ],
+  "neuralCircuits": [],
+  "resourceBudget": {
+    "maxHops": 32,
+    "maxRuntimeMs": 5000,
+    "maxExternalCalls": 0,
+    "maxCostUnits": null
+  }
+}
