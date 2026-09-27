@@ -1,0 +1,14 @@
+{
+  "name": "hex-neural-ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Recursive brain-inspired hexagonal AI application development platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
