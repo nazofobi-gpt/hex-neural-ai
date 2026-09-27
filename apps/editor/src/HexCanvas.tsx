@@ -42,6 +42,12 @@ interface EditorMetrics {
   renderMs: number;
   scale: number;
   zoomBand: "overview" | "node";
+  viewportX: number;
+  viewportY: number;
+  selectedId: string | null;
+  selectedQ: number | null;
+  selectedR: number | null;
+  adjacentFaceCount: number;
 }
 
 declare global {
@@ -103,6 +109,12 @@ export function HexCanvas() {
       renderMs: 0,
       scale: 1,
       zoomBand: "node",
+      viewportX: viewport.position.x,
+      viewportY: viewport.position.y,
+      selectedId: null,
+      selectedQ: null,
+      selectedR: null,
+      adjacentFaceCount: 0,
     };
 
     if (benchmarkMode) {
@@ -139,7 +151,9 @@ export function HexCanvas() {
       );
     }
 
-    function drawConnectionPreview(node: EditorHex): void {
+    function drawConnectionPreview(node: EditorHex): number {
+      let connectionCount = 0;
+
       for (const candidate of editor.nodes) {
         if (candidate.id === node.id) {
           continue;
@@ -150,6 +164,7 @@ export function HexCanvas() {
           continue;
         }
 
+        connectionCount += 1;
         const start = axialToPixel(node, HEX_SIZE);
         const end = axialToPixel(candidate, HEX_SIZE);
         const edge = new Graphics();
@@ -170,6 +185,8 @@ export function HexCanvas() {
         badge.position.set((start.x + end.x) / 2, (start.y + end.y) / 2);
         viewport.addChild(badge);
       }
+
+      return connectionCount;
     }
 
     function render(): void {
@@ -227,9 +244,9 @@ export function HexCanvas() {
       }
 
       const selected = selectedId ? nodeAt(selectedId) : undefined;
-      if (selected) {
-        drawConnectionPreview(selected);
-      }
+      const adjacentFaceCount = selected
+        ? drawConnectionPreview(selected)
+        : 0;
 
       lastMetrics = {
         totalNodes: editor.nodes.length,
@@ -237,6 +254,12 @@ export function HexCanvas() {
         renderMs: performance.now() - startedAt,
         scale: viewport.scale.x,
         zoomBand: band,
+        viewportX: viewport.position.x,
+        viewportY: viewport.position.y,
+        selectedId,
+        selectedQ: selected?.q ?? null,
+        selectedR: selected?.r ?? null,
+        adjacentFaceCount,
       };
       window.__HEX_EDITOR_METRICS__ = lastMetrics;
 
