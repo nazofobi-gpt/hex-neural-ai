@@ -8,7 +8,8 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "build": "npm run build -w @hex-neural/protocol && npm run build -w @hex-neural/editor",
+    "test": "npm run test -w @hex-neural/protocol && npm run test -w @hex-neural/editor",
+    "typecheck": "npm run typecheck -w @hex-neural/protocol && npm run typecheck -w @hex-neural/editor"
   }
 }
