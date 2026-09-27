@@ -19,9 +19,14 @@ import {
   hexPolygonPoints,
   pixelToAxial,
 } from "./hexMath";
+import {
+  calculateFitScale,
+  isCoordinateVisible,
+  zoomBand,
+} from "./viewport";
 
 const HEX_SIZE = 42;
-const MIN_ZOOM = 0.35;
+const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 2.5;
 
 interface CanvasActions {
@@ -29,6 +34,28 @@ interface CanvasActions {
   remove: () => void;
   undo: () => void;
   redo: () => void;
+}
+
+interface EditorMetrics {
+  totalNodes: number;
+  renderedNodes: number;
+  renderMs: number;
+  scale: number;
+  zoomBand: "overview" | "node";
+}
+
+declare global {
+  interface Window {
+    __HEX_EDITOR_METRICS__?: EditorMetrics;
+  }
+}
+
+function benchmarkRadius(): number | null {
+  const requested = Number(
+    new URLSearchParams(window.location.search).get("benchmark"),
+  );
+
+  return Number.isFinite(requested) && requested >= 2000 ? 26 : null;
 }
 
 export function HexCanvas() {
@@ -63,11 +90,29 @@ export function HexCanvas() {
     app.stage.eventMode = "static";
     app.stage.hitArea = app.screen;
 
-    const editor = new EditorState(createInitialHexes(3));
+    const radius = benchmarkRadius() ?? 3;
+    const editor = new EditorState(createInitialHexes(radius));
+    const benchmarkMode = radius >= 26;
     let selectedId: string | null = null;
     let draggingId: string | null = null;
     let panning = false;
     let lastPointer = new Point();
+    let lastMetrics: EditorMetrics = {
+      totalNodes: editor.nodes.length,
+      renderedNodes: 0,
+      renderMs: 0,
+      scale: 1,
+      zoomBand: "node",
+    };
+
+    if (benchmarkMode) {
+      const fittedScale = calculateFitScale(
+        editor.nodes,
+        { width: app.screen.width, height: app.screen.height },
+        HEX_SIZE,
+      );
+      viewport.scale.set(Math.max(MIN_ZOOM, fittedScale));
+    }
 
     const textStyle = new TextStyle({
       fill: 0xdbeafe,
@@ -82,10 +127,16 @@ export function HexCanvas() {
 
     function updateStatus(prefix = "Ready"): void {
       const selected = selectedId ? nodeAt(selectedId) : undefined;
-      const suffix = selected
+      const selectedSuffix = selected
         ? ` · ${selected.label} [q=${selected.q}, r=${selected.r}]`
         : "";
-      setStatus(`${prefix} · ${editor.nodes.length} hexes${suffix}`);
+      const benchmarkSuffix = benchmarkMode
+        ? ` · rendered ${lastMetrics.renderedNodes}/${lastMetrics.totalNodes} · ${lastMetrics.renderMs.toFixed(1)}ms · ${Math.round(lastMetrics.scale * 100)}%`
+        : "";
+
+      setStatus(
+        `${prefix} · ${editor.nodes.length} hexes${selectedSuffix}${benchmarkSuffix}`,
+      );
     }
 
     function drawConnectionPreview(node: EditorHex): void {
@@ -122,9 +173,28 @@ export function HexCanvas() {
     }
 
     function render(): void {
+      const startedAt = performance.now();
       viewport.removeChildren().forEach((child) => child.destroy());
+      const band = zoomBand(viewport.scale.x);
+      let renderedNodes = 0;
 
       for (const node of editor.nodes) {
+        if (
+          !isCoordinateVisible(
+            node,
+            HEX_SIZE,
+            {
+              x: viewport.position.x,
+              y: viewport.position.y,
+              scale: viewport.scale.x,
+            },
+            { width: app.screen.width, height: app.screen.height },
+          )
+        ) {
+          continue;
+        }
+
+        renderedNodes += 1;
         const position = axialToPixel(node, HEX_SIZE);
         const selected = node.id === selectedId;
         const hex = new Graphics();
@@ -147,16 +217,31 @@ export function HexCanvas() {
 
         viewport.addChild(hex);
 
-        const label = new Text(`${node.q},${node.r}`, textStyle);
-        label.anchor.set(0.5);
-        label.position.set(position.x, position.y);
-        label.eventMode = "none";
-        viewport.addChild(label);
+        if (band === "node") {
+          const label = new Text(`${node.q},${node.r}`, textStyle);
+          label.anchor.set(0.5);
+          label.position.set(position.x, position.y);
+          label.eventMode = "none";
+          viewport.addChild(label);
+        }
       }
 
       const selected = selectedId ? nodeAt(selectedId) : undefined;
       if (selected) {
         drawConnectionPreview(selected);
+      }
+
+      lastMetrics = {
+        totalNodes: editor.nodes.length,
+        renderedNodes,
+        renderMs: performance.now() - startedAt,
+        scale: viewport.scale.x,
+        zoomBand: band,
+      };
+      window.__HEX_EDITOR_METRICS__ = lastMetrics;
+
+      if (benchmarkMode) {
+        updateStatus("Benchmark");
       }
     }
 
@@ -189,6 +274,7 @@ export function HexCanvas() {
     const finishPointer = () => {
       draggingId = null;
       panning = false;
+      render();
       updateStatus("Ready");
     };
 
@@ -213,6 +299,7 @@ export function HexCanvas() {
       const after = viewport.toGlobal(before);
       viewport.position.x += global.x - after.x;
       viewport.position.y += global.y - after.y;
+      render();
       updateStatus(`Zoom ${Math.round(nextScale * 100)}%`);
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
@@ -231,7 +318,10 @@ export function HexCanvas() {
           render();
           updateStatus("Redo");
         }
-      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedId) {
+      } else if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        selectedId
+      ) {
         event.preventDefault();
         editor.remove(selectedId);
         selectedId = null;
@@ -276,6 +366,7 @@ export function HexCanvas() {
 
     return () => {
       actionsRef.current = null;
+      delete window.__HEX_EDITOR_METRICS__;
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("keydown", onKeyDown);
       app.destroy(true, {
@@ -301,7 +392,7 @@ export function HexCanvas() {
         <button type="button" onClick={() => actionsRef.current?.redo()}>
           Redo
         </button>
-        <span className="status" aria-live="polite">
+        <span className="status" role="status" aria-live="polite">
           {status}
         </span>
       </div>
