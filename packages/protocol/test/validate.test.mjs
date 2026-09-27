@@ -29,3 +29,10 @@ test("schema mismatch requires an explicit transform", async () => {
   assert.equal(result.valid, false);
   assert.ok(result.issues.some((issue) => issue.code === "INCOMPATIBLE_CHANNEL_SCHEMA"));
 });
+
+test("recursive seven-cell cluster fixture passes core validation", async () => {
+  const raw = await readFile(new URL("../../../examples/recursive-seven-cell-cluster.json", import.meta.url), "utf8");
+  const graph = JSON.parse(raw);
+  const result = validateGraph(graph);
+  assert.equal(result.valid, true, JSON.stringify(result.issues));
+});
