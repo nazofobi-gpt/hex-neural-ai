@@ -8,7 +8,7 @@ on:
       - "feat/**"
 
 jobs:
-  typecheck:
+  protocol:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,3 +17,4 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run typecheck
+      - run: npm test
