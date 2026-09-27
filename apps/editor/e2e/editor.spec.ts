@@ -14,6 +14,17 @@ interface EditorMetrics {
   adjacentFaceCount: number;
 }
 
+interface ClusterMetrics {
+  scale: number;
+  visibleNodeIds: string[];
+  visibleConnectionCount: number;
+  collapseLevel: 0 | 1 | 2;
+  semanticCollapseLevel: 0 | 1 | 2;
+  manualCollapseLevel: 0 | 1 | 2;
+  revision: number;
+  identityFingerprint: string;
+}
+
 async function readMetrics(page: Page): Promise<EditorMetrics> {
   return page.evaluate(() => {
     const metrics = (
@@ -24,6 +35,22 @@ async function readMetrics(page: Page): Promise<EditorMetrics> {
 
     if (!metrics) {
       throw new Error("Editor metrics are not available");
+    }
+
+    return metrics;
+  });
+}
+
+async function readClusterMetrics(page: Page): Promise<ClusterMetrics> {
+  return page.evaluate(() => {
+    const metrics = (
+      window as typeof window & {
+        __HEX_CLUSTER_METRICS__?: ClusterMetrics;
+      }
+    ).__HEX_CLUSTER_METRICS__;
+
+    if (!metrics) {
+      throw new Error("Cluster metrics are not available");
     }
 
     return metrics;
@@ -191,4 +218,86 @@ test("2k benchmark renders at least 2,000 visible hexes and captures evidence", 
   });
 
   console.log("G197_BENCHMARK", JSON.stringify(metrics));
+});
+
+test("recursive cluster collapse, undo/redo and semantic zoom preserve identity", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?clusterDemo=1");
+
+  const status = page.getByRole("status");
+  await expect(status).toContainText("Cluster detail");
+  let metrics = await readClusterMetrics(page);
+  const identity = metrics.identityFingerprint;
+
+  expect(metrics.collapseLevel).toBe(0);
+  expect(metrics.visibleNodeIds).toHaveLength(13);
+  expect(metrics.visibleConnectionCount).toBe(12);
+
+  await page.getByRole("button", { name: "Collapse cluster" }).click();
+  await expect(status).toContainText("Cluster nested");
+  metrics = await readClusterMetrics(page);
+  expect(metrics.collapseLevel).toBe(1);
+  expect(metrics.visibleNodeIds).toHaveLength(7);
+  expect(metrics.visibleNodeIds).toContain("cluster-inner");
+  expect(metrics.identityFingerprint).toBe(identity);
+
+  await page.getByRole("button", { name: "Collapse cluster" }).click();
+  await expect(status).toContainText("Cluster application");
+  metrics = await readClusterMetrics(page);
+  expect(metrics.collapseLevel).toBe(2);
+  expect(metrics.visibleNodeIds).toEqual(["cluster-root"]);
+  expect(metrics.identityFingerprint).toBe(identity);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(status).toContainText("Cluster nested");
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(status).toContainText("Cluster application");
+
+  await page.getByRole("button", { name: "Expand cluster" }).click();
+  await page.getByRole("button", { name: "Expand cluster" }).click();
+  await expect(status).toContainText("Cluster detail");
+  metrics = await readClusterMetrics(page);
+  expect(metrics.manualCollapseLevel).toBe(0);
+  expect(metrics.identityFingerprint).toBe(identity);
+
+  const canvas = page.getByLabel(
+    "Recursive cluster semantic zoom canvas",
+  );
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(
+    box!.x + box!.width / 2,
+    box!.y + box!.height / 2,
+  );
+
+  for (let index = 0; index < 10; index += 1) {
+    await page.mouse.wheel(0, 300);
+  }
+
+  await page.waitForFunction(() => {
+    const metrics = (
+      window as typeof window & {
+        __HEX_CLUSTER_METRICS__?: ClusterMetrics;
+      }
+    ).__HEX_CLUSTER_METRICS__;
+    return metrics?.semanticCollapseLevel === 2;
+  });
+
+  metrics = await readClusterMetrics(page);
+  expect(metrics.collapseLevel).toBe(2);
+  expect(metrics.manualCollapseLevel).toBe(0);
+  expect(metrics.visibleNodeIds).toEqual(["cluster-root"]);
+  expect(metrics.identityFingerprint).toBe(identity);
+
+  const screenshot = await page.screenshot({
+    path: testInfo.outputPath("recursive-cluster-overview.png"),
+    fullPage: true,
+  });
+  await testInfo.attach("recursive-cluster-overview", {
+    body: screenshot,
+    contentType: "image/png",
+  });
+
+  console.log("G199_CLUSTER", JSON.stringify(metrics));
 });
