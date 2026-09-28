@@ -9,3 +9,4 @@ export * from "./distributed.js";
 export * from "./nodeRuntime.js";
 
 export * from "./distributedState.js";
+export * from "./edgeFabric.js";
