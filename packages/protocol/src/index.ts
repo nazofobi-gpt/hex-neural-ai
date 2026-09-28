@@ -5,3 +5,5 @@ export * from "./interface.js";
 export * from "./cluster.js";
 export * from "./transfer.js";
 export * from "./distributed.js";
+
+export * from "./nodeRuntime.js";
