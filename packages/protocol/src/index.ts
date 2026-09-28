@@ -10,3 +10,4 @@ export * from "./nodeRuntime.js";
 
 export * from "./distributedState.js";
 export * from "./edgeFabric.js";
+export * from "./recovery.js";
