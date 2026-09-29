@@ -20,6 +20,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: G-209 measured autoscaling benchmark
+        run: node packages/protocol/benchmark/autoscaling-benchmark.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser -w @hex-neural/editor
       - name: Upload browser evidence
