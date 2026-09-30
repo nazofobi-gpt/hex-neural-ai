@@ -81,3 +81,5 @@ export async function intakeLearningPackage<T>(
     }
   };
 }
+
+export * from "./model-capsule.js";
