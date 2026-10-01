@@ -1,0 +1,10 @@
+import test from "node:test"; import assert from "node:assert/strict"; import {TrustPlatform,immutableSecurityFields} from "../dist/index.js";
+const prov={source:"fixture",trusted:true,graphVersion:"g1",neuralVersion:"n1",modelVersion:"m1",runId:"r1"};
+const untrusted={...prov,trusted:false};
+const policy={roleCapabilities:{runner:["tool","network"]},networkAllowlist:["api.example.com"],maxCostUsd:1,maxRequests:10};
+test("untrusted provenance cannot escalate capability",()=>{const t=new TrustPlatform(policy); assert.equal(t.authorize({id:"u",roles:["runner"]},"tool",untrusted),false)});
+test("network scope is allowlisted",()=>{const t=new TrustPlatform(policy); const p={id:"u",roles:["runner"]}; assert.equal(t.authorizeNetwork(p,"https://api.example.com/x",prov),true); assert.equal(t.authorizeNetwork(p,"https://evil.example/x",prov),false)});
+test("learning cannot mutate hard policy fields",()=>{assert.equal(immutableSecurityFields({preference:1}),true); assert.equal(immutableSecurityFields({permission:"admin"}),false); assert.equal(immutableSecurityFields({billing:true}),false)});
+test("learning scopes inspect and reset independently",()=>{const t=new TrustPlatform(policy); t.setLearning("PROJECT",{x:1}); t.setLearning("USER",{x:2}); assert.deepEqual(t.inspectLearning("PROJECT"),{x:1}); t.resetLearning("PROJECT"); assert.equal(t.inspectLearning("PROJECT"),undefined); assert.deepEqual(t.inspectLearning("USER"),{x:2})});
+test("rate and cost caps fail closed",()=>{const t=new TrustPlatform(policy); assert.equal(t.enforceBudget(10,1),true); assert.equal(t.enforceBudget(11,1),false); assert.equal(t.enforceBudget(1,1.01),false)});
+test("secret redaction and artifact scan",()=>{assert.match(TrustPlatform.redact("token=abc123"),/REDACTED/); assert.equal(TrustPlatform.artifactSafe("-----BEGIN PRIVATE KEY-----"),false); assert.equal(TrustPlatform.artifactSafe("safe artifact"),true)});
