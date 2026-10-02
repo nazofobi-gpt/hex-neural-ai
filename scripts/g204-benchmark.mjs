@@ -9,9 +9,9 @@ function run(n,seed){
  const r=rng(seed), bandit=Array(6).fill(0), out={det:{ok:0,lat:[],edits:0,cost:0},bandit:{ok:0,lat:[],edits:0,cost:0},snn:{ok:0,lat:[],edits:0,cost:0}};
  const cfg={...defaultLifConfig(32),seed};
  for(let k=0;k<n;k++){
-  const target=Math.floor(r()*6); const base=Array.from({length:6},(_,i)=>0.45+r()*.1+(i===target?.0:0));
+  const target=Math.floor(r()*6); const base=Array.from({length:6},(_,i)=>0.45+r()*.1+(i===target ? 0.08 : 0));
   let t=performance.now(); const d=base.indexOf(Math.max(...base)); out.det.lat.push(performance.now()-t); out.det.ok+=d===target?1:0; out.det.edits+=d===target?0:1; out.det.cost+=1;
-  t=performance.now(); const bs=base.map((v,i)=>v+bandit[i]); const b=bs.indexOf(Math.max(...bs)); out.bandit.lat.push(performance.now()-t); out.bandit.ok+=b===target?1:0; out.bandit.edits+=b===target?0:1; out.bandit.cost+=1.15; bandit[target]=Math.min(.25,bandit[target]+.002); bandit[b]=Math.max(-.25,bandit[b]+(b===target?.001:-.001));
+  t=performance.now(); const bs=base.map((v,i)=>v+bandit[i]); const b=bs.indexOf(Math.max(...bs)); out.bandit.lat.push(performance.now()-t); out.bandit.ok+=b===target?1:0; out.bandit.edits+=b===target?0:1; out.bandit.cost+=1.15; bandit[target]=Math.min(.25,bandit[target]+.002); bandit[b]=Math.max(-.25,bandit[b]+(b===target ? .001 : -.001));
   t=performance.now(); const s=chooseRoute(base,Array.from({length:24},()=>.04+r()*.08),cfg,true); out.snn.lat.push(performance.now()-t); out.snn.ok+=s.selectedIndex===target?1:0; out.snn.edits+=s.selectedIndex===target?0:1; out.snn.cost+=32*24;
  }
  return Object.fromEntries(Object.entries(out).map(([name,x])=>[name,{completion:x.ok/n,acceptance:x.ok/n,editLoad:x.edits/n,latencyMs:mean(x.lat),costProxy:x.cost/n,ci95:ci95Bernoulli(x.ok/n,n)}]));
