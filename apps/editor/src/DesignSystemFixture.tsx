@@ -16,6 +16,9 @@ export function DesignSystemFixture() {
         <label>Name <input className="ds-input" defaultValue="Capability node" /></label>
         <label>Runtime <select className="ds-select" defaultValue="local"><option value="local">Local</option><option value="cloud">Cloud</option></select></label>
         <button className="ds-button" type="button">Save node</button>
+        <button className="ds-button ds-icon-button" type="button" aria-label="Inspect provenance">
+          <svg className="ds-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.2 7.5v9L12 21l7.8-4.5v-9L12 3Z" /><path d="m8.5 12 2.2 2.2 4.8-5" /></svg>
+        </button>
         <button className="ds-button" type="button" disabled aria-disabled="true">Unavailable</button>
       </section>
 
