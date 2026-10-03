@@ -23,10 +23,16 @@ export interface RecallHit {
   score: number;
 }
 
+interface StoredSource {
+  source: Readonly<SourceVersion>;
+  chunkSize: number;
+}
+
 const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
 const tokenSet = (value: string) => new Set(normalize(value).toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean));
+const sourceKey = (sourceId: string, version: string) => JSON.stringify([sourceId, version]);
 const chunkId = (s: SourceVersion, ordinal: number, text: string) =>
-  `${s.sourceId}@${s.version}:${ordinal}:${simpleDigest(text)}`;
+  `${s.sourceId.length}:${s.sourceId}${s.version.length}:${s.version}:${ordinal}:${simpleDigest(text)}`;
 
 export function simpleDigest(value: string): string {
   let h = 2166136261;
@@ -38,13 +44,14 @@ export function simpleDigest(value: string): string {
 }
 
 export class MemoryFabric {
-  private readonly sources = new Map<string, SourceVersion>();
+  private readonly sources = new Map<string, StoredSource>();
   private readonly chunks = new Map<string, MemoryChunk>();
 
   ingest(source: SourceVersion, chunkSize = 240): MemoryChunk[] {
     if (!source.sourceId || !source.version || !source.checksum || !source.scope) throw new Error("INVALID_SOURCE_PROVENANCE");
-    const key = `${source.sourceId}@${source.version}`;
-    if (this.sources.has(key)) return this.chunksFor(key);
+    if (!Number.isSafeInteger(chunkSize) || chunkSize <= 0) throw new Error("INVALID_CHUNK_SIZE");
+    const key = sourceKey(source.sourceId, source.version);
+    if (this.sources.has(key)) return this.chunksFor(source.sourceId, source.version);
     const text = normalize(source.content);
     if (!text) throw new Error("EMPTY_SOURCE");
     const parts: string[] = [];
@@ -63,7 +70,7 @@ export class MemoryFabric {
       this.chunks.set(chunk.id, chunk);
       created.push(chunk);
     }
-    this.sources.set(key, Object.freeze({...source}));
+    this.sources.set(key, Object.freeze({source: Object.freeze({...source}), chunkSize}));
     return created;
   }
 
@@ -83,8 +90,7 @@ export class MemoryFabric {
   }
 
   removeSource(sourceId: string, version: string): number {
-    const key = `${sourceId}@${version}`;
-    this.sources.delete(key);
+    this.sources.delete(sourceKey(sourceId, version));
     let removed = 0;
     for (const [id, chunk] of this.chunks) {
       if (chunk.sourceId === sourceId && chunk.sourceVersion === version) {
@@ -99,11 +105,10 @@ export class MemoryFabric {
     const versions = [...this.sources.values()];
     this.chunks.clear();
     this.sources.clear();
-    for (const source of versions) this.ingest(source);
+    for (const {source, chunkSize} of versions) this.ingest(source, chunkSize);
   }
 
-  private chunksFor(key: string): MemoryChunk[] {
-    const [sourceId, version] = key.split("@");
+  private chunksFor(sourceId: string, version: string): MemoryChunk[] {
     return [...this.chunks.values()].filter(c => c.sourceId === sourceId && c.sourceVersion === version);
   }
 }

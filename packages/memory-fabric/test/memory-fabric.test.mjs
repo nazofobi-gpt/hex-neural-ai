@@ -29,6 +29,33 @@ test("remove and rebuild never resurrect removed source", () => {
   assert.equal(fabric.recall("routing", ["project:hex"]).length, 0);
 });
 
+test("rebuild preserves custom chunk boundaries and deterministic ids", () => {
+  const fabric = new MemoryFabric();
+  const longSource = {...source, sourceId:"custom", content:"Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda."};
+  const before = fabric.ingest(longSource, 12).map(({id, text, ordinal}) => ({id, text, ordinal}));
+  fabric.rebuild();
+  const after = fabric.ingest(longSource, 12).map(({id, text, ordinal}) => ({id, text, ordinal}));
+  assert.deepEqual(after, before);
+});
+
+test("source ids and versions containing at-signs remain collision-free", () => {
+  const fabric = new MemoryFabric();
+  const firstSource = {...source, sourceId:"kb@tenant", version:"v@1"};
+  const secondSource = {...source, sourceId:"kb", version:"tenant@v@1", checksum:"sha256:def", content:"Gamma isolation proof."};
+  const first = fabric.ingest(firstSource, 16);
+  const second = fabric.ingest(secondSource, 16);
+  assert.notDeepEqual(first.map(x => x.id), second.map(x => x.id));
+  assert.deepEqual(fabric.ingest(firstSource, 16).map(x => x.id), first.map(x => x.id));
+  assert.ok(fabric.removeSource(firstSource.sourceId, firstSource.version) > 0);
+  assert.equal(fabric.recall("routing", ["project:hex"]).some(hit => hit.chunk.sourceId === firstSource.sourceId), false);
+  assert.ok(fabric.recall("isolation", ["project:hex"]).some(hit => hit.chunk.sourceId === secondSource.sourceId));
+});
+
+test("rejects invalid chunk sizes", () => {
+  const fabric = new MemoryFabric();
+  assert.throws(() => fabric.ingest(source, 0), /INVALID_CHUNK_SIZE/);
+});
+
 test("rejects provenance-free source", () => {
   const fabric = new MemoryFabric();
   assert.throws(() => fabric.ingest({...source, checksum:""}), /INVALID_SOURCE_PROVENANCE/);
