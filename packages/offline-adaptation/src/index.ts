@@ -22,12 +22,10 @@ export interface AdaptationInput {
   minHoldoutImprovement: number;
   maxRegressionDelta: number;
 }
-export interface Evaluation {
-  meanSquaredError: number;
-  examples: number;
-}
+export interface Evaluation { meanSquaredError: number; examples: number; }
 export interface AdaptationReport {
   adapterVersion: string;
+  baseVersion: string;
   baseHash: string;
   datasetHash: string;
   accepted: boolean;
@@ -96,7 +94,7 @@ export function trainOfflineAdapter(input:AdaptationInput):AdaptationReport {
   const datasetHash=stableHash([input.datasetVersion,input.train,input.holdout,input.regression]);
   const adapterVersion="adapter-"+stableHash([baseHash,datasetHash,input.requestedEpochs,budget]);
   return Object.freeze({
-    adapterVersion,baseHash,datasetHash,accepted,rejectionReason,
+    adapterVersion,baseVersion:input.baseVersion,baseHash,datasetHash,accepted,rejectionReason,
     baselineHoldout,adaptedHoldout,baselineRegression,adaptedRegression,
     holdoutImprovement,regressionDelta,
     cost:{epochs:input.requestedEpochs,examplesSeen:input.requestedEpochs*input.train.length,parameterUpdates},
@@ -105,8 +103,6 @@ export function trainOfflineAdapter(input:AdaptationInput):AdaptationReport {
   });
 }
 export const rollbackAdapter=(report:AdaptationReport,baselineWeights:readonly number[])=>{
-  if(stableHash([report.baseHash,baselineWeights])===report.baseHash) return Object.freeze([...baselineWeights]);
-  const expected=stableHash([report.baseHash]);
-  if(!expected) throw new Error("UNREACHABLE");
+  if(stableHash([report.baseVersion,baselineWeights])!==report.baseHash) throw new Error("BASE_HASH_MISMATCH");
   return Object.freeze([...baselineWeights]);
 };

@@ -18,10 +18,11 @@ test("train and holdout leakage fails closed by id or content",()=>{
   const byId=baseInput();byId.holdout=[ex("t1",3,3)];assert.throws(()=>trainOfflineAdapter(byId),/HOLDOUT_LEAKAGE/);
   const byContent=baseInput();byContent.holdout=[ex("other",2,2)];assert.throws(()=>trainOfflineAdapter(byContent),/HOLDOUT_LEAKAGE/);
 });
-test("forgetting regression rejects candidate and preserves baseline",()=>{
+test("forgetting regression rejects candidate and rollback verifies base hash",()=>{
   const input=baseInput();input.regression=[ex("r1",1,0)];input.maxRegressionDelta=0;
   const report=trainOfflineAdapter(input);assert.equal(report.accepted,false);assert.equal(report.rejectionReason,"FORGETTING_REGRESSION");
   assert.deepEqual(report.activeWeights,input.baselineWeights);assert.deepEqual(rollbackAdapter(report,input.baselineWeights),input.baselineWeights);
+  assert.throws(()=>rollbackAdapter(report,[1]),/BASE_HASH_MISMATCH/);
 });
 test("budget caps block epochs examples and parameters",()=>{
   const epochs=baseInput();epochs.requestedEpochs=21;assert.throws(()=>trainOfflineAdapter(epochs),/EPOCH_BUDGET_EXCEEDED/);
