@@ -5,6 +5,7 @@ test("design-system fixture exposes semantic states and deterministic visual evi
   await expect(page.getByTestId("design-system-fixture")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("Capability node");
   await expect(page.getByRole("tab", { selected: true })).toContainText("Overview");
+  await expect(page.getByRole("button", { name: "Inspect provenance" })).toBeVisible();
 
   for (const state of ["selected", "running", "success", "warning", "error", "disabled", "locked", "offline", "stale", "partial"]) {
     const card = page.getByTestId(`state-${state}`);
