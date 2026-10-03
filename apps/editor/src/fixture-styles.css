@@ -1,0 +1,17 @@
+
+.ds-fixture {
+  min-height: 100vh;
+  padding: var(--space-6);
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  background: var(--bg);
+  color: var(--text);
+  overflow: auto;
+}
+
+.ds-fixture h1, .ds-fixture h2, .ds-fixture p { margin-block: 0 var(--space-2); }
+.ds-fixture label { display: grid; gap: var(--space-1); margin-block: var(--space-2); color: var(--text-muted); }
+.ds-state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
+.ds-state-grid .ds-panel { display: flex; align-items: center; gap: var(--space-2); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
