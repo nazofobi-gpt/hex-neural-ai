@@ -50,6 +50,8 @@
   color: var(--text);
   font: inherit;
 }
+.ds-icon { width: 1em; height: 1em; display: inline-block; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; }
+.ds-icon-button { inline-size: var(--control-height); padding: 0; display: inline-grid; place-items: center; }
 .ds-button, .ds-tab { padding: 0 var(--space-3); cursor: pointer; }
 .ds-input, .ds-select { width: 100%; padding: 0 var(--space-3); }
 .ds-button:hover, .ds-tab:hover { border-color: var(--accent); }
