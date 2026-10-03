@@ -1,1 +1,1 @@
-{"extends":"../../tsconfig.json","compilerOptions":{"rootDir":"src","outDir":"dist"},"include":["src/**/*.ts"]}
+{"compilerOptions":{"target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","strict":true,"declaration":true,"outDir":"dist","rootDir":"src"},"include":["src/**/*.ts"]}
