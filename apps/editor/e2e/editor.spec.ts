@@ -30,8 +30,15 @@ async function readMetrics(page: Page): Promise<EditorMetrics> {
   });
 }
 
+async function enterBuilder(page: Page, path = "/"): Promise<void> {
+  await page.goto(path);
+  await page.getByRole("button", { name: "Create guided project" }).click();
+  await page.getByRole("button", { name: "Enter builder" }).click();
+  await expect(page.getByRole("heading", { name: "Builder", exact: true })).toBeVisible();
+}
+
 test("toolbar mutations are reflected in the live editor", async ({ page }) => {
-  await page.goto("/");
+  await enterBuilder(page);
 
   const status = page.getByRole("status");
   await expect(status).toContainText("37 hexes");
@@ -53,7 +60,7 @@ test("toolbar mutations are reflected in the live editor", async ({ page }) => {
 test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face adjacency", async ({
   page,
 }) => {
-  await page.goto("/");
+  await enterBuilder(page);
 
   const canvas = page.getByLabel(
     "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
@@ -157,7 +164,7 @@ test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face
 test("2k benchmark renders at least 2,000 visible hexes and captures evidence", async ({
   page,
 }, testInfo) => {
-  await page.goto("/?benchmark=2107");
+  await enterBuilder(page, "/?benchmark=2107");
 
   await page.waitForFunction(() => {
     const metrics = (
