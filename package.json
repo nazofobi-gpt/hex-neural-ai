@@ -1,0 +1,12 @@
+{
+  "name": "hex-neural-ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Recursive brain-inspired hexagonal AI application development platform",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "build": "npm run build -w @hex-neural/protocol && npm run build -w @hex-neural/runtime && npm run build -w @hex-neural/editor && npm run build -w @hex-neural/learning-package && npm run build -w @hex-neural/neural-controller && npm run build -w @hex-neural/bounded-learning && npm run build -w @hex-neural/offline-adaptation && npm run build -w @hex-neural/memory-fabric && npm run build -w @hex-neural/continual-lifecycle",
+    "test": "npm run test -w @hex-neural/protocol && npm run test -w @hex-neural/runtime && npm run test -w @hex-neural/editor && npm run test -w @hex-neural/learning-package && npm run test -w @hex-neural/neural-controller && npm run test -w @hex-neural/bounded-learning && npm run test -w @hex-neural/offline-adaptation && npm run test -w @hex-neural/memory-fabric && npm run test -w @hex-neural/continual-lifecycle",
+    "typecheck": "npm run typecheck -w @hex-neural/protocol && npm run typecheck -w @hex-neural/runtime && npm run typecheck -w @hex-neural/editor && npm run typecheck -w @hex-neural/learning-package && npm run typecheck -w @hex-neural/neural-controller && npm run typecheck -w @hex-neural/bounded-learning && npm run typecheck -w @hex-neural/offline-adaptation && npm run typecheck -w @hex-neural/memory-fabric && npm run typecheck -w @hex-neural/continual-lifecycle"
+  }
+}
