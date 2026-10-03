@@ -1,6 +1,11 @@
+import { DesignSystemFixture } from "./DesignSystemFixture";
 import { HexCanvas } from "./HexCanvas";
 
 export function App() {
+  if (new URLSearchParams(window.location.search).has("design-system")) {
+    return <DesignSystemFixture />;
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
