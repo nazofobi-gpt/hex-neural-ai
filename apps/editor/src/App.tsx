@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { HexCanvas } from "./HexCanvas";
+import { registerCapability, type CapabilityRecord } from "./capabilityRegistry";
+import "./capability.css";
 
-type View = "Home" | "Projects" | "Recents" | "Starred" | "Templates" | "Activity" | "Builder";
+type View = "Home" | "Projects" | "Capabilities" | "Recents" | "Starred" | "Templates" | "Activity" | "Builder";
 type Pending = "signIn" | "workspace" | "project" | null;
 
-const nav: View[] = ["Home", "Projects", "Recents", "Starred", "Templates", "Activity"];
+const nav: View[] = ["Home", "Projects", "Capabilities", "Recents", "Starred", "Templates", "Activity"];
 const waitForMock = () => new Promise<void>((resolve) => window.setTimeout(resolve, 250));
 
 export function App() {
@@ -19,6 +21,24 @@ export function App() {
   const [failProjectOnce, setFailProjectOnce] = useState(
     () => new URLSearchParams(window.location.search).get("mockProjectError") === "1",
   );
+  const [capability, setCapability] = useState<CapabilityRecord | null>(null);
+  const [credentialRef, setCredentialRef] = useState("vault://workspace/research-mcp");
+
+  const testConnection = () => {
+    setCapability(registerCapability({
+      id: "research-mcp",
+      label: "Research MCP",
+      kind: "mcp",
+      protocol: "mcp-2026-07-28",
+      credentialRef,
+      permissions: [{ scope: "documents:read", access: "read" }],
+    }, {
+      authenticated: !new URLSearchParams(window.location.search).has("mockAuthError"),
+      schemaCompatible: true,
+      grantedScopes: ["documents:read"],
+      checkedAt: new Date().toISOString(),
+    }));
+  };
 
   const signIn = async () => {
     setError(null);
@@ -161,7 +181,23 @@ export function App() {
             )}
           </div>
         )}
-        {view !== "Home" && view !== "Projects" && (
+        {view === "Capabilities" && (
+          <div className="content">
+            <section className="capability-header">
+              <div><p className="eyebrow">Capability library</p><h2>Connect tools without exposing credentials.</h2><p>Review protocol, secret reference, and requested permissions before testing.</p></div>
+              <span className="state-badge">{capability?.state ?? "not tested"}</span>
+            </section>
+            <section className="connection-card" aria-labelledby="connection-title">
+              <div><p className="eyebrow">MCP connection</p><h3 id="connection-title">Research MCP</h3><p>Protocol: MCP 2026-07-28 · Health checks are read-only.</p></div>
+              <label htmlFor="credential-ref">Credential vault reference</label>
+              <input id="credential-ref" value={credentialRef} onChange={(event) => setCredentialRef(event.target.value)} />
+              <div className="permission-preview"><strong>Permission preview</strong><span>documents:read</span><small>No write or external side-effect permission requested.</small></div>
+              <button className="primary" onClick={testConnection}>Test connection</button>
+              {capability && <p role={capability.state === "ready" ? "status" : "alert"} className={capability.state === "ready" ? "success" : "error"}>{capability.state === "ready" ? "Connection healthy. Secret material was not stored in project configuration." : capability.reason}</p>}
+            </section>
+          </div>
+        )}
+        {view !== "Home" && view !== "Projects" && view !== "Capabilities" && (
           <div className="content"><section className="empty"><h2>{view}</h2><p>This workspace has no {view.toLowerCase()} yet. The empty state is intentional and does not represent demo data.</p><button onClick={() => setView("Home")}>Back to Home</button></section></div>
         )}
       </section>

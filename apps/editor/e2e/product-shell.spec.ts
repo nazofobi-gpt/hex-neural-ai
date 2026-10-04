@@ -52,3 +52,22 @@ test("navigation exposes intentional empty states and quick-create", async ({ pa
   await page.getByRole("button", { name: /Quick create/ }).click();
   await expect(page.getByRole("heading", { name: "First Neural Workflow" })).toBeVisible();
 });
+
+test("capability connection previews permissions and rejects inline credentials", async ({ page }) => {
+  await createWorkspace(page);
+  await page.getByRole("button", { name: "Capabilities", exact: true }).click();
+  await expect(page.getByText("documents:read", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("status")).toContainText("Connection healthy");
+
+  await page.getByLabel("Credential vault reference").fill("inline-secret");
+  await page.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("alert")).toContainText("vault references");
+});
+
+test("authentication failure offers typed reconnect remediation", async ({ page }) => {
+  await createWorkspace(page, "/?mockAuthError=1");
+  await page.getByRole("button", { name: "Capabilities", exact: true }).click();
+  await page.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("alert")).toContainText("Reconnect");
+});
