@@ -32,6 +32,9 @@ async function readMetrics(page: Page): Promise<EditorMetrics> {
 
 async function enterBuilder(page: Page, path = "/"): Promise<void> {
   await page.goto(path);
+  await page.getByRole("button", { name: "Continue with preview account" }).click();
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
   await page.getByRole("button", { name: "Create guided project" }).click();
   await page.getByRole("button", { name: "Enter builder" }).click();
   await expect(page.getByRole("heading", { name: "Builder", exact: true })).toBeVisible();
