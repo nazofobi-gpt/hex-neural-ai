@@ -301,3 +301,67 @@ test("recursive cluster collapse, undo/redo and semantic zoom preserve identity"
 
   console.log("G199_CLUSTER", JSON.stringify(metrics));
 });
+
+
+test("private alpha completes goal to feedback to next-run with resettable learning", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?alphaDemo=1");
+
+  await expect(
+    page.getByRole("heading", {
+      name: "Goal → graph → run → artifact → feedback → next run",
+    }),
+  ).toBeVisible();
+
+  const goal = page.getByLabel("Natural-language goal");
+  await goal.fill("Produce a synthetic private-alpha artifact from explicit user intent.");
+
+  await page.getByRole("button", { name: "Build graph" }).click();
+  await expect(page.getByTestId("alpha-graph-status")).toContainText(
+    "5 nodes · 4 edges · private-alpha-v1",
+  );
+
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(page.getByTestId("alpha-run-status")).toContainText(
+    "alpha-run-1 · completed · COMPLETED",
+  );
+  await expect(page.getByTestId("alpha-provenance")).toContainText(
+    "artifact=alpha-artifact-1 · graph=private-alpha-v1 · adapter=alpha.synthetic-tool",
+  );
+
+  await page.getByRole("button", { name: "Accept result" }).click();
+  await expect(page.getByTestId("alpha-learning-score")).toContainText(
+    "PROJECT score 0.098",
+  );
+
+  await page.getByRole("button", { name: "Run next iteration" }).click();
+  await expect(page.getByTestId("alpha-run-status")).toContainText(
+    "alpha-run-2 · completed · COMPLETED",
+  );
+  await expect(page.getByTestId("alpha-provenance")).toContainText(
+    "artifact=alpha-artifact-2",
+  );
+
+  await page.getByRole("button", { name: "Reset project learning" }).click();
+  await expect(page.getByTestId("alpha-learning-score")).toContainText(
+    "PROJECT score 0.000",
+  );
+
+  const checklist = page.getByLabel("Private alpha checklist");
+  await expect(checklist).toContainText(
+    "Hard permission/cost policy is outside learned state.",
+  );
+  await expect(checklist).toContainText(
+    "performs no external publish",
+  );
+
+  const screenshot = await page.screenshot({
+    path: testInfo.outputPath("g204-private-alpha.png"),
+    fullPage: true,
+  });
+  await testInfo.attach("g204-private-alpha", {
+    body: screenshot,
+    contentType: "image/png",
+  });
+});
