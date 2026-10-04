@@ -1,11 +1,9 @@
 import { useMemo, useState } from "react";
-import { BoundedLearner } from "@hex-neural/bounded-learning";
-import {
-  compileGraph,
-  runExecutableGraph,
-  type RunReceipt,
-} from "@hex-neural/runtime";
-import type { Face, HexCell, HnapGraph } from "@hex-neural/protocol";
+import { BoundedLearner } from "../../../packages/bounded-learning/src/index";
+import { compileGraph } from "../../../packages/runtime/src/compiler";
+import { runExecutableGraph } from "../../../packages/runtime/src/runtime";
+import type { RunReceipt } from "../../../packages/runtime/src/types";
+import type { Face, HexCell, HnapGraph } from "../../../packages/protocol/src/types";
 
 const NOW = "2026-10-05T00:00:00+02:00";
 const GRAPH_VERSION = "private-alpha-v1";
