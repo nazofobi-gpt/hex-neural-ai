@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { disableCapability, registerCapability, rollbackCapability, selectFallback } from "../src/capabilityRegistry";
+import { disableCapability, discoverLocalRuntimes, recordHealth, registerCapability, rollbackCapability, selectFallback, verifyAndEnableCapability } from "../src/capabilityRegistry";
 
 const base = { id: "research-mcp", label: "Research MCP", kind: "mcp" as const, protocol: "mcp-2026-07-28", credentialRef: "vault://workspace/research-mcp", permissions: [{ scope: "documents:read", access: "read" as const }] };
 const healthy = { authenticated: true, schemaCompatible: true, grantedScopes: ["documents:read"], checkedAt: "2026-10-04T09:48:00.000Z" };
@@ -27,5 +27,30 @@ describe("capability registry", () => {
     const blocked = disableCapability({ ...local, id: "blocked", priority: 1 });
     expect(selectFallback([remote, blocked, local], "documents:read")?.id).toBe("local");
     expect(selectFallback([remote], "documents:write")).toBeNull();
+  });
+
+  it("keeps bounded health history and never auto-enables a disabled capability", () => {
+    let record = registerCapability(base, healthy);
+    for (let index = 0; index < 7; index += 1) record = recordHealth(record, { state: index === 6 ? "offline" : "healthy", checkedAt: `2026-10-04T10:0${index}:00.000Z`, detail: `probe-${index}` });
+    expect(record).toMatchObject({ state: "degraded", health: expect.arrayContaining([expect.objectContaining({ detail: "probe-6" })]) });
+    expect(record.health).toHaveLength(5);
+    const disabled = disableCapability(record);
+    expect(recordHealth(disabled, { state: "healthy", checkedAt: healthy.checkedAt, detail: "recovered" }).state).toBe("disabled");
+  });
+
+  it("requires a fresh auth, schema and permission probe before re-enable", () => {
+    const disabled = disableCapability(registerCapability(base, healthy));
+    expect(verifyAndEnableCapability(disabled, { ...healthy, grantedScopes: [] }).state).toBe("quarantined");
+    expect(verifyAndEnableCapability(disabled, healthy)).toMatchObject({ state: "ready", version: 3, reason: expect.stringContaining("Re-enabled") });
+  });
+
+  it("discovers only verified loopback or unix runtimes", () => {
+    const result = discoverLocalRuntimes([
+      { id: "local-a", label: "Local A", endpoint: "http://127.0.0.1:11434", compatibility: ["text"], license: "MIT", signatureVerified: true },
+      { id: "remote", label: "Remote", endpoint: "https://example.com", compatibility: ["text"], license: "unknown", signatureVerified: true },
+      { id: "unsigned", label: "Unsigned", endpoint: "unix:///tmp/hex.sock", compatibility: ["embeddings"], license: "MIT", signatureVerified: false },
+    ]);
+    expect(result.accepted.map(({ id }) => id)).toEqual(["local-a"]);
+    expect(result.rejected).toEqual(expect.arrayContaining([expect.objectContaining({ id: "remote" }), expect.objectContaining({ id: "unsigned" })]));
   });
 });

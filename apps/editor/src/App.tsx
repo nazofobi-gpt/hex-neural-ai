@@ -199,6 +199,10 @@ export function App() {
               <article><div><strong>Local runtime</strong><span className="state-badge">ready</span></div><p>local-runtime · local · MIT</p><small>Compatibility: text, embeddings · priority 10</small></article>
               <article><div><strong>Research MCP</strong><span className="state-badge">{capability?.state ?? "not tested"}</span></div><p>MCP 2026-07-28 · remote · provider terms</p><small>Fallback priority 20 · documents:read only</small></article>
             </section>
+            <section className="discovery" aria-label="Local runtime discovery">
+              <div><p className="eyebrow">Local discovery</p><h3>1 verified runtime ready to import</h3><p>Loopback Runtime · 127.0.0.1 · signature verified · execution permission shown before import.</p></div>
+              <div className="discovery-result"><strong>2 rejected safely</strong><small>Remote endpoint and unsigned runtime were not imported.</small></div>
+            </section>
           </div>
         )}
         {view !== "Home" && view !== "Projects" && view !== "Capabilities" && (

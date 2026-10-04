@@ -19,4 +19,8 @@
 .catalog article div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .catalog p { color: #94a3b8; }
 .catalog small { color: #67e8f9; }
-@media (max-width: 760px) { .capability-header { align-items: flex-start; flex-direction: column; } .catalog { grid-template-columns: 1fr; } }
+.discovery { display: flex; justify-content: space-between; gap: 20px; margin-top: 16px; border: 1px solid #1e293b; border-radius: 14px; background: #0f172a; padding: 18px; }
+.discovery h3 { margin: 4px 0; }
+.discovery p,.discovery small { color: #94a3b8; }
+.discovery-result { display: grid; align-content: center; gap: 6px; min-width: 220px; }
+@media (max-width: 760px) { .capability-header,.discovery { align-items: flex-start; flex-direction: column; } .catalog { grid-template-columns: 1fr; } }
