@@ -48,9 +48,10 @@ describe("capability registry", () => {
     const result = discoverLocalRuntimes([
       { id: "local-a", label: "Local A", endpoint: "http://127.0.0.1:11434", compatibility: ["text"], license: "MIT", signatureVerified: true },
       { id: "remote", label: "Remote", endpoint: "https://example.com", compatibility: ["text"], license: "unknown", signatureVerified: true },
+      { id: "prefix-attack", label: "Prefix attack", endpoint: "https://localhost.evil.example", compatibility: ["text"], license: "unknown", signatureVerified: true },
       { id: "unsigned", label: "Unsigned", endpoint: "unix:///tmp/hex.sock", compatibility: ["embeddings"], license: "MIT", signatureVerified: false },
     ]);
     expect(result.accepted.map(({ id }) => id)).toEqual(["local-a"]);
-    expect(result.rejected).toEqual(expect.arrayContaining([expect.objectContaining({ id: "remote" }), expect.objectContaining({ id: "unsigned" })]));
+    expect(result.rejected).toEqual(expect.arrayContaining([expect.objectContaining({ id: "remote" }), expect.objectContaining({ id: "prefix-attack" }), expect.objectContaining({ id: "unsigned" })]));
   });
 });

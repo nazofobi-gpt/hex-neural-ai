@@ -57,7 +57,7 @@ export function discoverLocalRuntimes(candidates: LocalRuntimeCandidate[]): Disc
   const accepted: ConnectionInput[] = [];
   const rejected: DiscoveryResult["rejected"] = [];
   for (const candidate of candidates) {
-    const localEndpoint = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|unix:\/\/\/)/i.test(candidate.endpoint);
+    const localEndpoint = /^(https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(?:\/|$)|unix:\/\/\/)/i.test(candidate.endpoint);
     if (!localEndpoint) { rejected.push({ id: candidate.id, reason: "Remote endpoints cannot be imported by local discovery." }); continue; }
     if (!candidate.signatureVerified) { rejected.push({ id: candidate.id, reason: "Runtime signature is unverified." }); continue; }
     accepted.push({ id: candidate.id, label: candidate.label, kind: "compute", protocol: "local-runtime", permissions: [{ scope: "runtime:execute", access: "write" }], metadata: { compatibility: [...candidate.compatibility], resourceClass: "local", license: candidate.license } });
