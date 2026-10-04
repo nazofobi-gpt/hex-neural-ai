@@ -195,6 +195,10 @@ export function App() {
               <button className="primary" onClick={testConnection}>Test connection</button>
               {capability && <p role={capability.state === "ready" ? "status" : "alert"} className={capability.state === "ready" ? "success" : "error"}>{capability.state === "ready" ? "Connection healthy. Secret material was not stored in project configuration." : capability.reason}</p>}
             </section>
+            <section className="catalog" aria-label="Capability catalog">
+              <article><div><strong>Local runtime</strong><span className="state-badge">ready</span></div><p>local-runtime · local · MIT</p><small>Compatibility: text, embeddings · priority 10</small></article>
+              <article><div><strong>Research MCP</strong><span className="state-badge">{capability?.state ?? "not tested"}</span></div><p>MCP 2026-07-28 · remote · provider terms</p><small>Fallback priority 20 · documents:read only</small></article>
+            </section>
           </div>
         )}
         {view !== "Home" && view !== "Projects" && view !== "Capabilities" && (

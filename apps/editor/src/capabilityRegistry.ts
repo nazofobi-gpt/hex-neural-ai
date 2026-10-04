@@ -2,9 +2,10 @@ export type CapabilityKind = "model" | "tool" | "mcp" | "memory" | "compute";
 export type CapabilityState = "draft" | "ready" | "degraded" | "quarantined" | "disabled";
 
 export interface PermissionGrant { scope: string; access: "read" | "write"; }
+export interface CapabilityMetadata { compatibility: string[]; resourceClass: "local" | "remote" | "hybrid"; license: string; }
 export interface CapabilityRevision { version: number; state: CapabilityState; credentialRef: string | null; permissions: PermissionGrant[]; checkedAt: string | null; reason: string | null; }
-export interface CapabilityRecord extends CapabilityRevision { id: string; label: string; kind: CapabilityKind; protocol: string; history: CapabilityRevision[]; }
-export interface ConnectionInput { id: string; label: string; kind: CapabilityKind; protocol: string; credentialRef?: string; permissions: PermissionGrant[]; }
+export interface CapabilityRecord extends CapabilityRevision { id: string; label: string; kind: CapabilityKind; protocol: string; metadata: CapabilityMetadata; priority: number; history: CapabilityRevision[]; }
+export interface ConnectionInput { id: string; label: string; kind: CapabilityKind; protocol: string; credentialRef?: string; permissions: PermissionGrant[]; metadata?: Partial<CapabilityMetadata>; priority?: number; }
 export interface ConnectionProbe { authenticated: boolean; schemaCompatible: boolean; grantedScopes: string[]; checkedAt: string; }
 
 const credentialReference = /^(vault|secret):\/\/[a-z0-9][a-z0-9/_-]*$/i;
@@ -31,8 +32,14 @@ export function rollbackCapability(record: CapabilityRecord): CapabilityRecord {
   return { ...record, ...previous, version: record.version + 1, permissions: previous.permissions.map((permission) => ({ ...permission })), history: record.history.slice(0, -1), reason: `Rolled back to configuration v${previous.version}.` };
 }
 
+export function selectFallback(records: CapabilityRecord[], requiredScope: string): CapabilityRecord | null {
+  return [...records]
+    .filter((record) => record.state === "ready" && record.permissions.some(({ scope }) => scope === requiredScope))
+    .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))[0] ?? null;
+}
+
 function initial(input: ConnectionInput, state: CapabilityState, reason: string | null, checkedAt: string | null = null): CapabilityRecord {
-  return { id: input.id, label: input.label, kind: input.kind, protocol: input.protocol, version: 1, state, credentialRef: input.credentialRef?.trim() || null, permissions: input.permissions.map((permission) => ({ ...permission })), checkedAt, reason, history: [] };
+  return { id: input.id, label: input.label, kind: input.kind, protocol: input.protocol, metadata: { compatibility: [...(input.metadata?.compatibility ?? [])], resourceClass: input.metadata?.resourceClass ?? "remote", license: input.metadata?.license ?? "unknown" }, priority: input.priority ?? 100, version: 1, state, credentialRef: input.credentialRef?.trim() || null, permissions: input.permissions.map((permission) => ({ ...permission })), checkedAt, reason, history: [] };
 }
 
 function revise(record: CapabilityRecord, state: CapabilityState, reason: string): CapabilityRecord {
