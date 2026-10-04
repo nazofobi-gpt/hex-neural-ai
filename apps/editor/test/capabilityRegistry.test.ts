@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { disableCapability, registerCapability, rollbackCapability } from "../src/capabilityRegistry";
+import { disableCapability, registerCapability, rollbackCapability, selectFallback } from "../src/capabilityRegistry";
 
 const base = { id: "research-mcp", label: "Research MCP", kind: "mcp" as const, protocol: "mcp-2026-07-28", credentialRef: "vault://workspace/research-mcp", permissions: [{ scope: "documents:read", access: "read" as const }] };
 const healthy = { authenticated: true, schemaCompatible: true, grantedScopes: ["documents:read"], checkedAt: "2026-10-04T09:48:00.000Z" };
@@ -19,5 +19,13 @@ describe("capability registry", () => {
     expect(registerCapability(base, { ...healthy, authenticated: false })).toMatchObject({ state: "degraded", reason: expect.stringContaining("Reconnect") });
     const disabled = disableCapability(registerCapability(base, healthy));
     expect(rollbackCapability(disabled)).toMatchObject({ state: "ready", version: 3, reason: "Rolled back to configuration v1." });
+  });
+
+  it("selects only healthy, permission-compatible fallbacks deterministically", () => {
+    const remote = registerCapability({ ...base, id: "remote", priority: 20, metadata: { resourceClass: "remote", license: "Apache-2.0", compatibility: ["text"] } }, healthy);
+    const local = registerCapability({ ...base, id: "local", priority: 10, protocol: "local-runtime", credentialRef: undefined, metadata: { resourceClass: "local", license: "MIT", compatibility: ["text"] } }, healthy);
+    const blocked = disableCapability({ ...local, id: "blocked", priority: 1 });
+    expect(selectFallback([remote, blocked, local], "documents:read")?.id).toBe("local");
+    expect(selectFallback([remote], "documents:write")).toBeNull();
   });
 });
