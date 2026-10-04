@@ -1,0 +1,17 @@
+.capability-header,
+.connection-card { border: 1px solid #1e293b; border-radius: 16px; background: #0f172a; padding: 24px; }
+.capability-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.capability-header h2 { margin: 8px 0; font-size: 30px; }
+.capability-header p,
+.connection-card p { color: #94a3b8; line-height: 1.55; }
+.state-badge { border: 1px solid #334155; border-radius: 999px; padding: 6px 10px; color: #67e8f9; font-size: 12px; text-transform: uppercase; white-space: nowrap; }
+.connection-card { display: grid; gap: 14px; margin-top: 16px; max-width: 720px; }
+.connection-card h3 { margin: 4px 0; font-size: 22px; }
+.connection-card label { font-size: 13px; font-weight: 700; }
+.connection-card input { border: 1px solid #334155; border-radius: 8px; background: #090e1a; color: #e5e7eb; padding: 10px 12px; }
+.permission-preview { display: grid; grid-template-columns: 1fr auto; gap: 8px; border: 1px solid #334155; border-radius: 10px; padding: 14px; }
+.permission-preview span { color: #67e8f9; font-family: ui-monospace, monospace; }
+.permission-preview small { grid-column: 1 / -1; color: #94a3b8; }
+.success { color: #86efac !important; }
+.connection-card .primary { justify-self: start; }
+@media (max-width: 760px) { .capability-header { align-items: flex-start; flex-direction: column; } }
