@@ -5,7 +5,7 @@ type View = "Home" | "Projects" | "Recents" | "Starred" | "Templates" | "Activit
 type Pending = "signIn" | "workspace" | "project" | null;
 
 const nav: View[] = ["Home", "Projects", "Recents", "Starred", "Templates", "Activity"];
-const waitForMock = () => new Promise<void>((resolve) => window.setTimeout(resolve, 60));
+const waitForMock = () => new Promise<void>((resolve) => window.setTimeout(resolve, 250));
 
 export function App() {
   const [view, setView] = useState<View>("Home");

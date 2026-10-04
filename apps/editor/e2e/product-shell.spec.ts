@@ -2,9 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function createWorkspace(page: Page, path = "/") {
   await page.goto(path);
-  await page.getByRole("button", { name: "Continue with preview account" }).click();
+  const signIn = page.getByRole("button", { name: "Continue with preview account" });
+  await page.screenshot({ path: "test-results/g255-sign-in.png", fullPage: true });
+  await signIn.click();
+  await expect(page.getByRole("button", { name: "Signing in…" })).toBeDisabled();
   await expect(page.getByRole("heading", { name: "Create your workspace" })).toBeVisible();
+  await page.screenshot({ path: "test-results/g255-workspace.png", fullPage: true });
   await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("button", { name: "Creating workspace…" })).toBeDisabled();
   await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
 }
 
@@ -13,12 +18,21 @@ test("sign-in, workspace and guided project reach Builder by keyboard", async ({
   await page.screenshot({ path: "test-results/g255-home.png", fullPage: true });
   await page.getByRole("button", { name: "Create guided project" }).focus();
   await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Creating…" })).toBeDisabled();
   await expect(page.getByRole("heading", { name: "First Neural Workflow" })).toBeVisible();
   await expect(page.getByRole("list", { name: "First-run checklist" })).toContainText("Project created");
   await page.screenshot({ path: "test-results/g255-project-overview.png", fullPage: true });
   await page.getByRole("button", { name: "Enter builder" }).click();
   await expect(page.getByRole("heading", { name: "Builder" })).toBeVisible();
   await expect(page.getByLabel(/Interactive hex canvas/)).toBeVisible();
+});
+
+test("responsive shell keeps primary navigation and quick-create available", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await createWorkspace(page);
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Quick create/ })).toBeVisible();
+  await page.screenshot({ path: "test-results/g255-mobile-home.png", fullPage: true });
 });
 
 test("project error is explicit and retry-safe", async ({ page }) => {
