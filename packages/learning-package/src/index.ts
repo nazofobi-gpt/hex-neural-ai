@@ -83,3 +83,4 @@ export async function intakeLearningPackage<T>(
 }
 
 export * from "./model-capsule.js";
+export * from "./model-growth-benchmark.js";
