@@ -11,3 +11,5 @@ export * from "./online-adaptation-state.js";
 export * from "./online-adaptation-benchmark.js";
 
 export * from "./online-adaptation-guard.js";
+
+export * from "./buffer-ring.js";
