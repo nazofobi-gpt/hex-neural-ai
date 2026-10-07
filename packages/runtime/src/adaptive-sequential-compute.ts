@@ -139,7 +139,14 @@ export interface SequentialBenchmarkRow {
   quality: number;
   completionRate: number;
   activeClusters: number;
+  /** Actual peak process RSS observed in an isolated benchmark worker. */
   ramBytes: number;
+  /** Actual peak V8 heapUsed observed in the same isolated worker. */
+  heapUsedBytes: number;
+  /** Peak RSS minus worker baseline; allocator/OS noise may affect this delta. */
+  ramDeltaBytes: number;
+  /** Peak heapUsed minus worker baseline; allocator/GC noise may affect this delta. */
+  heapDeltaBytes: number;
   p95LatencyMs: number;
   cost: number;
   throughputPerSecond: number;
