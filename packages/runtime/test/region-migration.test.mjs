@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { performance } from "node:perf_hooks";
 import {
+  benchmarkMatchedRegionVsFlat,
   commitRegionMigration,
   compareObservedRouteTelemetry,
   prepareRegionMigration,
@@ -112,4 +114,137 @@ test("measured region/flat telemetry summaries remain explicit; no invented bene
   assert.deepEqual(compareObservedRouteTelemetry([
     { mode: "flat", regionIds: ["a"], observedBandwidthBytes: -1, observedLatencyMs: 1, observedCostUnits: 0 },
   ]), { ok: false, code: "INVALID_SHARD_STATE" });
+});
+
+
+test("split then merge across authoritative owners migrates replicas without state drift", () => {
+  const split = prepareRegionMigration(base, {
+    ...migration,
+    placements: [
+      { shardId: "one", regionId: "c", replicaOwnerIds: ["worker-3", "worker-4"] },
+      { shardId: "two", regionId: "b", replicaOwnerIds: ["worker-4"] },
+    ],
+  });
+  assert.equal(split.ok, true);
+  const first = commitRegionMigration(base, split.value);
+  assert.equal(first.ok, true);
+  assert.equal(first.value.after.ownerId, "worker-2");
+  assert.equal(first.value.after.ownerEpoch, 5);
+
+  const mergedTopology = {
+    version: "3",
+    regions: [region("b"), region("c")],
+    projections: [],
+  };
+  const merge = prepareRegionMigration(first.value.after, {
+    checkpointId: "checkpoint-2",
+    expectedOwnerId: "worker-2",
+    expectedOwnerEpoch: 5,
+    nextOwnerId: "worker-3",
+    nextTopology: mergedTopology,
+    placements: [
+      { shardId: "one", regionId: "c", replicaOwnerIds: ["worker-4"] },
+      { shardId: "two", regionId: "b", replicaOwnerIds: ["worker-1"] },
+    ],
+  });
+  assert.equal(merge.ok, true);
+  const second = commitRegionMigration(first.value.after, merge.value);
+  assert.equal(second.ok, true);
+  assert.equal(second.value.after.ownerId, "worker-3");
+  assert.equal(second.value.after.ownerEpoch, 6);
+  assert.deepEqual(
+    second.value.after.shards.map(s => [
+      s.shardId,
+      s.regionId,
+      s.stateVersion,
+      s.stateRef,
+      s.replicaOwnerIds,
+    ]),
+    [
+      ["one", "c", 3, "sha256:one", ["worker-4"]],
+      ["two", "b", 8, "sha256:two", ["worker-1"]],
+    ],
+  );
+
+  assert.deepEqual(
+    prepareRegionMigration(second.value.after, {
+      checkpointId: "stale",
+      expectedOwnerId: "worker-2",
+      expectedOwnerEpoch: 5,
+      nextOwnerId: "worker-4",
+      nextTopology: { ...mergedTopology, version: "4" },
+      placements: [
+        { shardId: "one", regionId: "c" },
+        { shardId: "two", regionId: "b" },
+      ],
+    }),
+    { ok: false, code: "STALE_OWNER" },
+  );
+
+  assert.deepEqual(
+    prepareRegionMigration(base, {
+      ...migration,
+      placements: [
+        { shardId: "one", regionId: "c", replicaOwnerIds: ["worker-3", "worker-3"] },
+        { shardId: "two", regionId: "b" },
+      ],
+    }),
+    { ok: false, code: "INVALID_REPLICA_PLACEMENT" },
+  );
+});
+
+test("bounded matched benchmark records real route timings and exact workload provenance", () => {
+  const topology = {
+    version: "bench-1",
+    regions: [region("a"), region("b"), region("c")],
+    projections: [
+      { fromRegionId: "a", toRegionId: "b", schema: "application/json", explicit: true },
+      { fromRegionId: "b", toRegionId: "c", schema: "application/json", explicit: true },
+      { fromRegionId: "a", toRegionId: "c", schema: "application/json", explicit: true },
+    ],
+  };
+  const workload = [
+    { sampleId: "local-a-1", sourceRegionId: "a", targetRegionId: "a", schema: "application/json", payloadBytes: 512 },
+    { sampleId: "local-b-1", sourceRegionId: "b", targetRegionId: "b", schema: "application/json", payloadBytes: 1024 },
+    { sampleId: "a-b-1", sourceRegionId: "a", targetRegionId: "b", schema: "application/json", payloadBytes: 2048 },
+    { sampleId: "a-c-1", sourceRegionId: "a", targetRegionId: "c", schema: "application/json", payloadBytes: 4096 },
+    { sampleId: "b-c-1", sourceRegionId: "b", targetRegionId: "c", schema: "application/json", payloadBytes: 1536 },
+    { sampleId: "local-c-1", sourceRegionId: "c", targetRegionId: "c", schema: "application/json", payloadBytes: 768 },
+  ];
+  const provenance = {
+    datasetId: "g226-runtime-route-workload-v1",
+    source: "packages/runtime/test/region-migration.test.mjs::bounded-matched-workload",
+    capturedAt: new Date().toISOString(),
+    repetitions: 5000,
+    costModel: {
+      fixedCostUnits: 1,
+      perInterRegionHopCostUnits: 0.25,
+      perTransferredByteCostUnits: 0.00001,
+    },
+  };
+  const result = benchmarkMatchedRegionVsFlat(
+    topology,
+    workload,
+    provenance,
+    () => performance.now(),
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.value.provenance.datasetId, provenance.datasetId);
+  assert.equal(result.value.region.count, workload.length);
+  assert.equal(result.value.flat.count, workload.length);
+  assert.equal(result.value.telemetry.length, workload.length * 2);
+  assert.ok(result.value.region.p95LatencyMs >= 0);
+  assert.ok(result.value.flat.p95LatencyMs >= 0);
+
+  for (const sample of workload) {
+    const matched = result.value.telemetry.filter(row => row.sampleId === sample.sampleId);
+    assert.deepEqual(new Set(matched.map(row => row.mode)), new Set(["region", "flat"]));
+    assert.ok(matched.every(row => row.datasetId === provenance.datasetId));
+  }
+
+  console.log("G226_OBSERVED_BENCHMARK", JSON.stringify({
+    provenance: result.value.provenance,
+    region: result.value.region,
+    flat: result.value.flat,
+  }));
 });
