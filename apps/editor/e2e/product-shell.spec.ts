@@ -46,8 +46,8 @@ test("project error is explicit and retry-safe", async ({ page }) => {
 
 test("navigation exposes intentional empty states and quick-create", async ({ page }) => {
   await createWorkspace(page);
-  await page.getByRole("button", { name: "Activity", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Activity", level: 2 })).toBeVisible();
+  await page.getByRole("button", { name: "Recents", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Recents", level: 2 })).toBeVisible();
   await expect(page.getByText(/does not represent demo data/)).toBeVisible();
   await page.getByRole("button", { name: /Quick create/ }).click();
   await expect(page.getByRole("heading", { name: "First Neural Workflow" })).toBeVisible();
