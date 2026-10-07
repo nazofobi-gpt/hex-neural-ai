@@ -5,6 +5,7 @@ import {
   checkpointExecutionFrame,
   createExecutionFrame,
   evaluateSequentialComputeBenchmark,
+  mergeAdaptiveBranches,
   runSequentialCorridor,
 } from "../dist/index.js";
 
@@ -25,48 +26,75 @@ function p95(values) {
 function measuredRow(depth, width, repetitions = 80) {
   const durations = [];
   let checkpointBytes = 0;
-  let completed = 0;
+  let completedRepetitions = 0;
+  let qualityTotal = 0;
+  let executedSteps = 0;
 
   for (let repetition = 0; repetition < repetitions; repetition += 1) {
-    const frame = createExecutionFrame(
-      `g230-${depth}-${width}-${repetition}`,
-      "payload:g230-bench",
-      { evidence: 0 },
-      8,
-    );
     const started = performance.now();
-    const result = runSequentialCorridor(
-      corridor,
-      frame,
-      depth,
-      (_clusterId, current) => ({
-        progress: 1,
-        residualDelta: {
-          evidence: Math.min(4, (current.residualState.evidence ?? 0) + 1),
-        },
+    const branches = [];
+
+    for (let branch = 0; branch < width; branch += 1) {
+      const frame = createExecutionFrame(
+        `g230-${depth}-${width}-${repetition}-${branch}`,
+        "payload:g230-bench",
+        { evidence: 0 },
+        8,
+      );
+      const result = runSequentialCorridor(
+        corridor,
+        frame,
+        depth,
+        (_clusterId, current) => ({
+          progress: 1,
+          residualDelta: {
+            evidence: Math.min(4, (current.residualState.evidence ?? 0) + 1),
+          },
+        }),
+      );
+      const evidence = result.frame.residualState.evidence ?? 0;
+      branches.push({
+        id: `branch-${branch}`,
+        quality: Math.min(1, evidence / 4),
+        value: result.frame.residualState,
+        exitCode: result.exitCode,
+      });
+      checkpointBytes += Buffer.byteLength(
+        checkpointExecutionFrame(result.frame),
+        "utf8",
+      );
+      executedSteps += result.frame.depth;
+    }
+
+    const merged = mergeAdaptiveBranches(
+      {
+        desiredDepth: depth,
+        desiredWidth: width,
+        branchJustified: width > 1,
+      },
+      branches,
+      (left, right) => ({
+        evidence: Math.max(left.evidence ?? 0, right.evidence ?? 0),
       }),
     );
+    const mergedEvidence = merged.merged.evidence ?? 0;
+    qualityTotal += Math.min(1, mergedEvidence / 4);
+    completedRepetitions += branches.every(branch => branch.exitCode === "COMPLETED") ? 1 : 0;
     durations.push(performance.now() - started);
-    completed += result.exitCode === "COMPLETED" ? 1 : 0;
-    checkpointBytes += Buffer.byteLength(
-      checkpointExecutionFrame(result.frame),
-      "utf8",
-    );
   }
 
-  const quality = Math.min(0.9, 0.5 + 0.1 * depth);
   const activeClusters = 2 * width;
   const averageCheckpointBytes = checkpointBytes / repetitions;
   const totalElapsedMs = durations.reduce((sum, value) => sum + value, 0);
   return {
     depth,
     width,
-    quality,
-    completionRate: completed / repetitions,
+    quality: qualityTotal / repetitions,
+    completionRate: completedRepetitions / repetitions,
     activeClusters,
-    ramBytes: Math.ceil(averageCheckpointBytes * activeClusters),
+    ramBytes: Math.ceil(averageCheckpointBytes),
     p95LatencyMs: p95(durations),
-    cost: depth * activeClusters,
+    cost: executedSteps / repetitions,
     throughputPerSecond:
       totalElapsedMs > 0 ? repetitions / (totalElapsedMs / 1000) : 0,
   };
@@ -98,14 +126,17 @@ test("measured 1/2/4/8 benchmark proves same-quality lower-active-cluster case",
   assert.equal(verdict.selected.quality, baseline.quality);
   assert.ok(verdict.selected.activeClusters < baseline.activeClusters);
   assert.ok(verdict.selected.cost < baseline.cost);
+  assert.ok(verdict.selected.ramBytes < baseline.ramBytes);
 
   console.log("G230_SEQUENTIAL_BENCHMARK", JSON.stringify({
     methodology: {
       repetitions: 80,
-      physicalCorridorClusters: 2,
+      physicalCorridorClustersPerBranch: 2,
       baseline: { depth: 4, width: 2 },
-      costModel: "depth*activeClusters",
-      ramProxy: "serializedExecutionFrameBytes*activeClusters",
+      quality: "merged residual evidence / target evidence",
+      cost: "measured executed virtual steps per repetition",
+      ramProxy: "serialized execution-frame bytes across actually executed branches",
+      latency: "wall-clock sequential branch execution; conservative for potential parallel width",
     },
     rows,
     verdict,
@@ -115,20 +146,20 @@ test("measured 1/2/4/8 benchmark proves same-quality lower-active-cluster case",
 test("no same-quality lower-cluster candidate fails safely to default topology", () => {
   const rows = [
     {
-      depth: 2, width: 1, quality: 0.7, completionRate: 1,
+      depth: 2, width: 1, quality: 0.5, completionRate: 1,
       activeClusters: 2, ramBytes: 200, p95LatencyMs: 1,
-      cost: 4, throughputPerSecond: 100,
+      cost: 2, throughputPerSecond: 100,
     },
     {
-      depth: 4, width: 2, quality: 0.9, completionRate: 1,
+      depth: 4, width: 2, quality: 1, completionRate: 1,
       activeClusters: 4, ramBytes: 500, p95LatencyMs: 2,
-      cost: 16, throughputPerSecond: 80,
+      cost: 8, throughputPerSecond: 80,
     },
   ];
   const verdict = evaluateSequentialComputeBenchmark(
     rows,
     { depth: 4, width: 2 },
-    { qualityTolerance: 0, maxLatencyMs: 10, maxCost: 16 },
+    { qualityTolerance: 0, maxLatencyMs: 10, maxCost: 8 },
   );
   assert.equal(verdict.sameQualityFewerClustersProven, false);
   assert.equal(verdict.selected, null);
