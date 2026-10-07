@@ -99,6 +99,40 @@ export function updateAdaptiveComputeState(
   };
 }
 
+export interface AdaptiveBranchCandidate<T> {
+  id: string;
+  quality: number;
+  value: T;
+}
+
+export interface AdaptiveBranchMerge<T> {
+  usedBranchIds: readonly string[];
+  merged: T;
+}
+
+export function mergeAdaptiveBranches<T>(
+  shape: AdaptiveComputeShape,
+  candidates: readonly AdaptiveBranchCandidate<T>[],
+  merge: (left: T, right: T) => T,
+): AdaptiveBranchMerge<T> {
+  const width = shape.branchJustified ? shape.desiredWidth : 1;
+  const selected = candidates
+    .filter(candidate => Number.isFinite(candidate.quality))
+    .sort((a, b) => b.quality - a.quality || a.id.localeCompare(b.id))
+    .slice(0, width);
+
+  if (selected.length < width || selected.length === 0) {
+    throw new Error("ADAPTIVE_BRANCH_RESULT_MISSING");
+  }
+
+  return {
+    usedBranchIds: selected.map(candidate => candidate.id),
+    merged: selected
+      .slice(1)
+      .reduce((current, candidate) => merge(current, candidate.value), selected[0].value),
+  };
+}
+
 export interface SequentialBenchmarkRow {
   depth: number;
   width: number;
