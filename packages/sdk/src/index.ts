@@ -127,3 +127,6 @@ export function validateGraphJson(text: string): SdkGraphValidation {
     return invalid("INVALID_JSON", "Graph input is not valid JSON.");
   }
 }
+
+export { HexApiClient, LocalMockTransport, SdkClientError } from "./client.js";
+export type { SdkTransport, SdkTransportRequest, SdkHttpMethod, SdkClientErrorCode } from "./client.js";
