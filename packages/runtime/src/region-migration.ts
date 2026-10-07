@@ -1,10 +1,17 @@
-import { validateRegionTopology, type RegionTopology } from "./functional-region.js";
+import {
+  flatDeterministicFallback,
+  routeRegionLocalFirst,
+  validateRegionTopology,
+  type RegionTopology,
+} from "./functional-region.js";
 
 export interface RegionShard {
   shardId: string;
   regionId: string;
   stateVersion: number;
   stateRef: string;
+  /** Read-only replicas; authoritative writes remain fenced by RegionSnapshot.ownerId/ownerEpoch. */
+  replicaOwnerIds?: readonly string[];
 }
 
 export interface RegionSnapshot {
@@ -20,7 +27,11 @@ export interface RegionMigrationIntent {
   expectedOwnerEpoch: number;
   nextOwnerId: string;
   nextTopology: RegionTopology;
-  placements: readonly { shardId: string; regionId: string }[];
+  placements: readonly {
+    shardId: string;
+    regionId: string;
+    replicaOwnerIds?: readonly string[];
+  }[];
 }
 
 export type RegionMigrationError =
@@ -31,7 +42,10 @@ export type RegionMigrationError =
   | "INVALID_SHARD_STATE"
   | "SHARD_COVERAGE_MISMATCH"
   | "UNKNOWN_TARGET_REGION"
-  | "CHECKPOINT_DIVERGED";
+  | "INVALID_REPLICA_PLACEMENT"
+  | "CHECKPOINT_DIVERGED"
+  | "INVALID_BENCHMARK"
+  | "ROUTE_FAILED";
 
 export interface PreparedRegionMigration {
   checkpointId: string;
@@ -55,6 +69,20 @@ function deepCopy<T>(value: T): T {
 
 function identical(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function normalizeReplicaOwners(
+  owners: readonly string[] | undefined,
+): readonly string[] | null {
+  if (!owners) return [];
+  const normalized = owners.map(owner => owner.trim());
+  if (
+    normalized.some(owner => !owner) ||
+    new Set(normalized).size !== normalized.length
+  ) {
+    return null;
+  }
+  return [...normalized].sort();
 }
 
 export function prepareRegionMigration(
@@ -84,32 +112,52 @@ export function prepareRegionMigration(
 
   const sourceIds = new Set<string>();
   for (const shard of current.shards) {
+    const replicaOwners = normalizeReplicaOwners(shard.replicaOwnerIds);
     if (
       !shard.shardId.trim() ||
       !shard.stateRef.trim() ||
       !Number.isSafeInteger(shard.stateVersion) ||
       shard.stateVersion < 0 ||
       sourceIds.has(shard.shardId) ||
-      !current.topology.regions.some(region => region.id === shard.regionId)
+      !current.topology.regions.some(region => region.id === shard.regionId) ||
+      replicaOwners === null
     ) {
-      return { ok: false, code: "INVALID_SHARD_STATE" };
+      return {
+        ok: false,
+        code: replicaOwners === null
+          ? "INVALID_REPLICA_PLACEMENT"
+          : "INVALID_SHARD_STATE",
+      };
     }
     sourceIds.add(shard.shardId);
   }
 
-  const placements = new Map<string, string>();
+  const placements = new Map<string, {
+    regionId: string;
+    replicaOwnerIds: readonly string[];
+  }>();
   for (const placement of intent.placements) {
     if (!sourceIds.has(placement.shardId) || placements.has(placement.shardId)) {
       return { ok: false, code: "SHARD_COVERAGE_MISMATCH" };
     }
-    placements.set(placement.shardId, placement.regionId);
+    const replicaOwnerIds = normalizeReplicaOwners(placement.replicaOwnerIds);
+    if (
+      replicaOwnerIds === null ||
+      replicaOwnerIds.includes(intent.nextOwnerId)
+    ) {
+      return { ok: false, code: "INVALID_REPLICA_PLACEMENT" };
+    }
+    placements.set(placement.shardId, {
+      regionId: placement.regionId,
+      replicaOwnerIds,
+    });
   }
   if (placements.size !== sourceIds.size) {
     return { ok: false, code: "SHARD_COVERAGE_MISMATCH" };
   }
 
   const targetIds = new Set(intent.nextTopology.regions.map(region => region.id));
-  if ([...placements.values()].some(regionId => !targetIds.has(regionId))) {
+  if ([...placements.values()].some(placement => !targetIds.has(placement.regionId))) {
     return { ok: false, code: "UNKNOWN_TARGET_REGION" };
   }
 
@@ -117,10 +165,14 @@ export function prepareRegionMigration(
     topology: deepCopy(intent.nextTopology),
     ownerId: intent.nextOwnerId,
     ownerEpoch: current.ownerEpoch + 1,
-    shards: current.shards.map(shard => ({
-      ...deepCopy(shard),
-      regionId: placements.get(shard.shardId)!,
-    })),
+    shards: current.shards.map(shard => {
+      const placement = placements.get(shard.shardId)!;
+      return {
+        ...deepCopy(shard),
+        regionId: placement.regionId,
+        replicaOwnerIds: [...placement.replicaOwnerIds],
+      };
+    }),
   };
   return {
     ok: true,
@@ -184,6 +236,8 @@ export interface RegionRouteTelemetry {
   observedBandwidthBytes: number;
   observedLatencyMs: number;
   observedCostUnits: number;
+  sampleId?: string;
+  datasetId?: string;
 }
 
 export interface RouteBenchmarkMetrics {
@@ -233,4 +287,139 @@ export function compareObservedRouteTelemetry(
     region: aggregate(samples.filter(s => s.mode === "region")),
     flat: aggregate(samples.filter(s => s.mode === "flat")),
   } };
+}
+
+
+export interface RegionBenchmarkWorkloadSample {
+  sampleId: string;
+  sourceRegionId: string;
+  targetRegionId: string;
+  schema: string;
+  payloadBytes: number;
+}
+
+export interface RegionBenchmarkCostModel {
+  fixedCostUnits: number;
+  perInterRegionHopCostUnits: number;
+  perTransferredByteCostUnits: number;
+}
+
+export interface RegionBenchmarkProvenance {
+  datasetId: string;
+  source: string;
+  capturedAt: string;
+  repetitions: number;
+  costModel: RegionBenchmarkCostModel;
+}
+
+export interface MatchedRegionBenchmarkResult {
+  provenance: RegionBenchmarkProvenance;
+  region: RouteBenchmarkMetrics;
+  flat: RouteBenchmarkMetrics;
+  telemetry: readonly RegionRouteTelemetry[];
+}
+
+/**
+ * Executes the exact same bounded workload through local-first and flat routing.
+ * Latency is clock-observed around the real routing call; bandwidth and cost are
+ * derived from the route actually returned and the recorded payload/cost model.
+ * The result reports measurements only and never asserts a topology benefit.
+ */
+export function benchmarkMatchedRegionVsFlat(
+  topology: RegionTopology,
+  workload: readonly RegionBenchmarkWorkloadSample[],
+  provenance: RegionBenchmarkProvenance,
+  clockMs: () => number,
+): MigrationResult<MatchedRegionBenchmarkResult> {
+  const cost = provenance.costModel;
+  const costValues = [
+    cost.fixedCostUnits,
+    cost.perInterRegionHopCostUnits,
+    cost.perTransferredByteCostUnits,
+  ];
+  if (
+    validateRegionTopology(topology).length > 0 ||
+    !provenance.datasetId.trim() ||
+    !provenance.source.trim() ||
+    !Number.isFinite(Date.parse(provenance.capturedAt)) ||
+    !Number.isSafeInteger(provenance.repetitions) ||
+    provenance.repetitions < 1 ||
+    provenance.repetitions > 100_000 ||
+    workload.length === 0 ||
+    costValues.some(value => !Number.isFinite(value) || value < 0)
+  ) {
+    return { ok: false, code: "INVALID_BENCHMARK" };
+  }
+
+  const seen = new Set<string>();
+  for (const sample of workload) {
+    if (
+      !sample.sampleId.trim() ||
+      seen.has(sample.sampleId) ||
+      !sample.schema.trim() ||
+      !Number.isSafeInteger(sample.payloadBytes) ||
+      sample.payloadBytes < 0
+    ) {
+      return { ok: false, code: "INVALID_BENCHMARK" };
+    }
+    seen.add(sample.sampleId);
+  }
+
+  const telemetry: RegionRouteTelemetry[] = [];
+  for (const mode of ["region", "flat"] as const) {
+    for (const sample of workload) {
+      let route: readonly string[] | undefined;
+      const started = clockMs();
+      for (let attempt = 0; attempt < provenance.repetitions; attempt += 1) {
+        const result = mode === "region"
+          ? routeRegionLocalFirst(
+              topology,
+              sample.sourceRegionId,
+              sample.targetRegionId,
+              sample.schema,
+            )
+          : flatDeterministicFallback(
+              topology,
+              sample.sourceRegionId,
+              sample.targetRegionId,
+            );
+        if (!result.ok) return { ok: false, code: "ROUTE_FAILED" };
+        route = result.route.regionIds;
+      }
+      const finished = clockMs();
+      const elapsed = finished - started;
+      if (!Number.isFinite(elapsed) || elapsed < 0 || !route) {
+        return { ok: false, code: "INVALID_BENCHMARK" };
+      }
+
+      const interRegionHops = Math.max(0, route.length - 1);
+      const observedBandwidthBytes = sample.payloadBytes * interRegionHops;
+      const observedCostUnits =
+        cost.fixedCostUnits +
+        cost.perInterRegionHopCostUnits * interRegionHops +
+        cost.perTransferredByteCostUnits * observedBandwidthBytes;
+
+      telemetry.push({
+        mode,
+        regionIds: [...route],
+        observedBandwidthBytes,
+        observedLatencyMs: elapsed / provenance.repetitions,
+        observedCostUnits,
+        sampleId: sample.sampleId,
+        datasetId: provenance.datasetId,
+      });
+    }
+  }
+
+  const compared = compareObservedRouteTelemetry(telemetry);
+  if (!compared.ok) return compared;
+  return {
+    ok: true,
+    value: {
+      provenance: deepCopy(provenance),
+      region: compared.value.region,
+      flat: compared.value.flat,
+      telemetry,
+    },
+  };
 }
