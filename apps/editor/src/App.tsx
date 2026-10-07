@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { HexCanvas } from "./HexCanvas";
-import { registerCapability, type CapabilityRecord } from "./capabilityRegistry";\nimport { deriveHealth, evaluateBudget, known, unknown, type CostLineV1, type RunMetricsV1, type TelemetryValue } from "./observability";
+import { registerCapability, type CapabilityRecord } from "./capabilityRegistry";
+import { deriveHealth, evaluateBudget, known, unknown, type CostLineV1, type RunMetricsV1, type TelemetryValue } from "./observability";
 import "./capability.css";
 
 type View = "Home" | "Projects" | "Capabilities" | "Recents" | "Starred" | "Templates" | "Activity" | "Builder";
