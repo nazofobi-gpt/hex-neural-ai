@@ -13,3 +13,5 @@ export * from "./online-adaptation-benchmark.js";
 export * from "./online-adaptation-guard.js";
 
 export * from "./sequential-compute.js";
+
+export * from "./adaptive-sequential-compute.js";
