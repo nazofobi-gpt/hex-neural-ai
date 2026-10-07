@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  mergeAdaptiveBranches,
   selectAdaptiveComputeShape,
   shouldContinueAdaptiveCompute,
   updateAdaptiveComputeState,
@@ -64,4 +65,37 @@ test("bounded route-depth learner never leaves bias bounds", () => {
   assert.equal(state.depthBias, -1);
   assert.equal(state.widthBias, -1);
   assert.equal(state.version, 60);
+});
+
+test("branch merge stays single-path unless width is justified and is deterministic when enabled", () => {
+  const candidates = [
+    { id: "branch-b", quality: 0.9, value: { evidence: 2 } },
+    { id: "branch-a", quality: 0.8, value: { evidence: 4 } },
+  ];
+  const merge = (left, right) => ({ evidence: Math.max(left.evidence, right.evidence) });
+
+  const single = mergeAdaptiveBranches(
+    { desiredDepth: 4, desiredWidth: 2, branchJustified: false },
+    candidates,
+    merge,
+  );
+  assert.deepEqual(single.usedBranchIds, ["branch-b"]);
+  assert.deepEqual(single.merged, { evidence: 2 });
+
+  const branched = mergeAdaptiveBranches(
+    { desiredDepth: 4, desiredWidth: 2, branchJustified: true },
+    candidates,
+    merge,
+  );
+  assert.deepEqual(branched.usedBranchIds, ["branch-b", "branch-a"]);
+  assert.deepEqual(branched.merged, { evidence: 4 });
+
+  assert.throws(
+    () => mergeAdaptiveBranches(
+      { desiredDepth: 4, desiredWidth: 2, branchJustified: true },
+      candidates.slice(0, 1),
+      merge,
+    ),
+    /ADAPTIVE_BRANCH_RESULT_MISSING/,
+  );
 });
