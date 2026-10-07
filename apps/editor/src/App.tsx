@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { HexCanvas } from "./HexCanvas";
-import { registerCapability, type CapabilityRecord } from "./capabilityRegistry";
+import { registerCapability, type CapabilityRecord } from "./capabilityRegistry";\nimport { deriveHealth, evaluateBudget, known, unknown, type CostLineV1, type RunMetricsV1, type TelemetryValue } from "./observability";
 import "./capability.css";
 
 type View = "Home" | "Projects" | "Capabilities" | "Recents" | "Starred" | "Templates" | "Activity" | "Builder";
@@ -8,6 +8,10 @@ type Pending = "signIn" | "workspace" | "project" | null;
 
 const nav: View[] = ["Home", "Projects", "Capabilities", "Recents", "Starred", "Templates", "Activity"];
 const waitForMock = () => new Promise<void>((resolve) => window.setTimeout(resolve, 250));
+
+function formatTelemetry(value: TelemetryValue<number>, unit = "") {
+  return value.state === "KNOWN" ? `${value.value.toLocaleString()}${unit}` : "UNKNOWN";
+}
 
 export function App() {
   const [view, setView] = useState<View>("Home");
@@ -23,6 +27,45 @@ export function App() {
   );
   const [capability, setCapability] = useState<CapabilityRecord | null>(null);
   const [credentialRef, setCredentialRef] = useState("vault://workspace/research-mcp");
+  const previewParams = new URLSearchParams(window.location.search);
+  const telemetryUnknown = previewParams.has("mockTelemetryUnknown");
+  const budgetExceeded = previewParams.has("mockBudgetExceeded");
+  const fixtureSource = "versioned-local-fixture";
+  const obsMetrics: RunMetricsV1 = {
+    queueAgeMs: telemetryUnknown ? unknown("queue collector unavailable", "DEGRADED") : known(42, fixtureSource),
+    throughputPerSecond: telemetryUnknown ? unknown("throughput collector unavailable", "DEGRADED") : known(18.4, fixtureSource),
+    errorCount: known(0, fixtureSource),
+    restartCount: known(0, fixtureSource),
+    replayCount: known(0, fixtureSource),
+  };
+  const obsCosts: CostLineV1[] = telemetryUnknown
+    ? [{
+        kind: "provider",
+        provider: "fixture-provider",
+        estimatedUsd: unknown("provider estimator unavailable", "UNAVAILABLE"),
+        actualUsd: unknown("provider meter unavailable", "UNAVAILABLE"),
+      }]
+    : [
+        {
+          kind: "provider",
+          provider: "fixture-provider",
+          model: "fixture-model",
+          estimatedUsd: known(0.02, fixtureSource),
+          actualUsd: known(budgetExceeded ? 0.06 : 0.018, fixtureSource),
+        },
+        {
+          kind: "compute",
+          estimatedUsd: known(0.007, fixtureSource),
+          actualUsd: known(0.006, fixtureSource),
+        },
+      ];
+  const budget = evaluateBudget(obsCosts, {
+    warningUsd: 0.04,
+    hardCapUsd: 0.05,
+    killSwitch: false,
+    unknownCost: "BLOCK",
+  });
+  const health = deriveHealth(obsMetrics);
 
   const testConnection = () => {
     setCapability(registerCapability({
@@ -181,6 +224,49 @@ export function App() {
             )}
           </div>
         )}
+
+        {view === "Activity" && (
+          <div className="content">
+            <section className="observability-header">
+              <div>
+                <p className="eyebrow">obs.v1 · fixture only</p>
+                <h2>Observability & cost</h2>
+                <p>Versioned local evidence demonstrates correlation, UNKNOWN semantics and hard budget enforcement. It is not production telemetry.</p>
+              </div>
+              <span className={`budget-badge ${budget.decision.toLowerCase()}`}>Budget {budget.decision}</span>
+            </section>
+            <div className="obs-grid">
+              <section className="obs-card" aria-label="Correlation">
+                <p className="eyebrow">Correlation</p>
+                <h3>run-preview-001</h3>
+                <dl>
+                  <div><dt>Cluster</dt><dd>cluster-a</dd></div>
+                  <div><dt>Replica</dt><dd>replica-01</dd></div>
+                  <div><dt>Generation</dt><dd>gen-07</dd></div>
+                  <div><dt>Graph</dt><dd>graph-preview</dd></div>
+                  <div><dt>Checkpoint</dt><dd>checkpoint-03</dd></div>
+                </dl>
+              </section>
+              <section className="obs-card" aria-label="Runtime health">
+                <p className="eyebrow">Health</p>
+                <h3>{health}</h3>
+                <dl>
+                  <div><dt>Queue age</dt><dd>{formatTelemetry(obsMetrics.queueAgeMs, " ms")}</dd></div>
+                  <div><dt>Throughput</dt><dd>{formatTelemetry(obsMetrics.throughputPerSecond, "/s")}</dd></div>
+                  <div><dt>Errors</dt><dd>{formatTelemetry(obsMetrics.errorCount)}</dd></div>
+                  <div><dt>Restarts</dt><dd>{formatTelemetry(obsMetrics.restartCount)}</dd></div>
+                  <div><dt>Replays</dt><dd>{formatTelemetry(obsMetrics.replayCount)}</dd></div>
+                </dl>
+              </section>
+              <section className="obs-card" aria-label="Cost budget">
+                <p className="eyebrow">Cost governance</p>
+                <h3>{budget.totalUsd.state === "KNOWN" ? `${budget.totalUsd.value.toFixed(3)} effective cost` : "UNKNOWN"}</h3>
+                <p className="muted">Warning $0.040 · hard cap $0.050 · unknown-cost policy BLOCK</p>
+                <p className={`gate-result ${budget.decision.toLowerCase()}`}>Run gate: {budget.decision} · {budget.reason}</p>
+              </section>
+            </div>
+          </div>
+        )}
         {view === "Capabilities" && (
           <div className="content">
             <section className="capability-header">
@@ -205,7 +291,7 @@ export function App() {
             </section>
           </div>
         )}
-        {view !== "Home" && view !== "Projects" && view !== "Capabilities" && (
+        {view !== "Home" && view !== "Projects" && view !== "Capabilities" && view !== "Activity" && (
           <div className="content"><section className="empty"><h2>{view}</h2><p>This workspace has no {view.toLowerCase()} yet. The empty state is intentional and does not represent demo data.</p><button onClick={() => setView("Home")}>Back to Home</button></section></div>
         )}
       </section>
