@@ -5,3 +5,7 @@ export * from "./functional-region.js";
 export * from "./region-migration.js";
 
 export * from "./bridge-adaptation.js";
+
+export * from "./online-adaptation-state.js";
+
+export * from "./online-adaptation-benchmark.js";
