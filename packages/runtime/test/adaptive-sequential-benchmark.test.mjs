@@ -165,3 +165,27 @@ test("no same-quality lower-cluster candidate fails safely to default topology",
   assert.equal(verdict.selected, null);
   assert.equal(verdict.verdict, "DEFAULT_TOPOLOGY");
 });
+
+
+test("same-quality lower-cluster candidate over latency ceiling fails closed", () => {
+  const rows = [
+    {
+      depth: 4, width: 1, quality: 1, completionRate: 1,
+      activeClusters: 2, ramBytes: 250, p95LatencyMs: 50,
+      cost: 4, throughputPerSecond: 20,
+    },
+    {
+      depth: 4, width: 2, quality: 1, completionRate: 1,
+      activeClusters: 4, ramBytes: 500, p95LatencyMs: 10,
+      cost: 8, throughputPerSecond: 40,
+    },
+  ];
+  const verdict = evaluateSequentialComputeBenchmark(
+    rows,
+    { depth: 4, width: 2 },
+    { qualityTolerance: 0, maxLatencyMs: 20, maxCost: 8 },
+  );
+  assert.equal(verdict.sameQualityFewerClustersProven, false);
+  assert.equal(verdict.selected, null);
+  assert.equal(verdict.verdict, "DEFAULT_TOPOLOGY");
+});
