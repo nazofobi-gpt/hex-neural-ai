@@ -228,6 +228,8 @@ export function App() {
 
         {view === "Activity" && (
           <div className="content">
+            <h2>Activity</h2>
+            <p className="muted">This view does not represent demo data from a live account; the values below are versioned local verification fixtures.</p>
             <section className="observability-header">
               <div>
                 <p className="eyebrow">obs.v1 · fixture only</p>
