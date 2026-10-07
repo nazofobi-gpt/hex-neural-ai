@@ -75,10 +75,16 @@ export function runSequentialCorridor(
 
   const byId = new Map(corridor.clusters.map(cluster => [cluster.id, cluster]));
   const revisit = new Map<string, number>();
-  let currentId = corridor.clusters[0].id;
+  for (const clusterId of initial.trace) {
+    if (!byId.has(clusterId)) throw new Error("INVALID_EXECUTION_CHECKPOINT");
+    revisit.set(clusterId, (revisit.get(clusterId) ?? 0) + 1);
+  }
+  const lastClusterId = initial.trace.at(-1);
+  let currentId = lastClusterId ? byId.get(lastClusterId)!.nextClusterId : corridor.clusters[0].id;
+  const targetDepth = initial.depth + desiredDepth;
   let frame: ExecutionFrame = { ...initial, residualState: stableState(initial.residualState), trace: [...initial.trace] };
 
-  while (frame.depth < desiredDepth) {
+  while (frame.depth < targetDepth) {
     if (frame.depth >= corridor.maxDepth) return { exitCode: "MAX_DEPTH", frame };
     if (frame.ttl <= 0) return { exitCode: "TTL_EXPIRED", frame };
     const visits = (revisit.get(currentId) ?? 0) + 1;
