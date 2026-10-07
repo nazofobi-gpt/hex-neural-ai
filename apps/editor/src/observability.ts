@@ -172,3 +172,133 @@ export function virtualizeLogWindow(
   const safeSize = Math.min(Math.max(0, Math.trunc(requestedSize)), Math.max(1, Math.trunc(maximumWindow)));
   return entries.slice(safeStart, safeStart + safeSize).map(sanitizeLogEntry);
 }
+
+
+export interface RuntimeReceiptProjectionV1 {
+  runId: string;
+  graphId: string;
+  checkpointId?: string;
+  clusterId?: string;
+  replicaId?: string;
+  generationId?: string;
+  messageId?: string;
+  runtimeMs: number;
+  processedSignals: number;
+  costUnits: number;
+  maxCostUnits: number | null;
+  status: "completed" | "terminated";
+  terminationCode: string;
+}
+
+export interface RuntimeUnitBudgetEvidenceV1 {
+  measuredCostUnits: number;
+  maxCostUnits: number | null;
+  decision: "ALLOW" | "BLOCK" | "UNKNOWN";
+  reason: "WITHIN_RUNTIME_BUDGET" | "MAX_COST_EXCEEDED" | "RUNTIME_BUDGET_UNKNOWN";
+}
+
+export interface RuntimeObservabilityProjectionV1 {
+  snapshot: ObservabilitySnapshotV1;
+  runtimeBudget: RuntimeUnitBudgetEvidenceV1;
+}
+
+const runtimeCostKinds: CostKind[] = [
+  "provider",
+  "model",
+  "tool",
+  "compute",
+  "storage",
+  "egress",
+];
+
+export function projectRuntimeReceipt(
+  receipt: RuntimeReceiptProjectionV1,
+): RuntimeObservabilityProjectionV1 {
+  const throughput =
+    receipt.runtimeMs > 0
+      ? known(
+          Number(
+            (
+              receipt.processedSignals /
+              (receipt.runtimeMs / 1_000)
+            ).toFixed(3),
+          ),
+          "g200:RunReceipt.totals",
+        )
+      : unknown<number>(
+          "Run receipt has zero runtimeMs; throughput is not measurable.",
+          "DEGRADED",
+        );
+
+  const costs = runtimeCostKinds.map<CostLineV1>((kind) => ({
+    kind,
+    estimatedUsd: unknown(
+      `No estimated USD receipt for ${kind}; runtime costUnits are not currency.`,
+      "UNAVAILABLE",
+    ),
+    actualUsd: unknown(
+      `No actual USD receipt for ${kind}; runtime costUnits are not currency.`,
+      "UNAVAILABLE",
+    ),
+  }));
+
+  const runtimeBudget: RuntimeUnitBudgetEvidenceV1 =
+    receipt.maxCostUnits === null
+      ? {
+          measuredCostUnits: receipt.costUnits,
+          maxCostUnits: null,
+          decision: "UNKNOWN",
+          reason: "RUNTIME_BUDGET_UNKNOWN",
+        }
+      : receipt.terminationCode === "MAX_COST_EXCEEDED" ||
+          receipt.costUnits > receipt.maxCostUnits
+        ? {
+            measuredCostUnits: receipt.costUnits,
+            maxCostUnits: receipt.maxCostUnits,
+            decision: "BLOCK",
+            reason: "MAX_COST_EXCEEDED",
+          }
+        : {
+            measuredCostUnits: receipt.costUnits,
+            maxCostUnits: receipt.maxCostUnits,
+            decision: "ALLOW",
+            reason: "WITHIN_RUNTIME_BUDGET",
+          };
+
+  return {
+    snapshot: {
+      correlation: {
+        schema: "obs.v1",
+        runId: receipt.runId,
+        clusterId: receipt.clusterId,
+        replicaId: receipt.replicaId,
+        generationId: receipt.generationId,
+        graphId: receipt.graphId,
+        messageId: receipt.messageId,
+        checkpointId: receipt.checkpointId,
+      },
+      metrics: {
+        queueAgeMs: unknown(
+          "G-200 RunReceipt does not record queue-age samples.",
+          "DEGRADED",
+        ),
+        throughputPerSecond: throughput,
+        errorCount: known(
+          receipt.status === "completed" ? 0 : 1,
+          "g200:RunReceipt.status",
+        ),
+        restartCount: unknown(
+          "G-200 RunReceipt does not record restart count.",
+          "DEGRADED",
+        ),
+        replayCount: unknown(
+          "G-200 RunReceipt does not record replay count.",
+          "DEGRADED",
+        ),
+      },
+      costs,
+      logs: [],
+    },
+    runtimeBudget,
+  };
+}
