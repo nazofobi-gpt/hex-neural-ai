@@ -132,7 +132,7 @@ describe("obs.v1 telemetry semantics", () => {
         outputPolicy: "allow",
         acceptedSchemas: [],
         connectionIds: [],
-      })) as ExecutableGraph["nodes"][number]["faces"],
+      })) as unknown as ExecutableGraph["nodes"][number]["faces"],
       neuralCircuitRef: null,
       config: {},
       stateRef: null,
