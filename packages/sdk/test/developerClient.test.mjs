@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DeveloperClientError, HexDeveloperClient } from "../dist/index.js";
+import { DeveloperClientError, HexDeveloperClient } from "../dist/developerClient.js";
 
 function transport(response) {
   const calls = [];
