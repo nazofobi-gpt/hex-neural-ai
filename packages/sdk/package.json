@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./developer": {
+      "types": "./dist/developerClient.d.ts",
+      "import": "./dist/developerClient.js"
     }
   },
   "bin": {
