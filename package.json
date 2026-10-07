@@ -10,6 +10,6 @@
   "scripts": {
     "build": "npm run build -w @hex-neural/protocol && npm run build -w @hex-neural/runtime && npm run build -w @hex-neural/editor",
     "test": "npm run test -w @hex-neural/protocol && npm run test -w @hex-neural/runtime && npm run test -w @hex-neural/editor",
-    "typecheck": "npm run typecheck -w @hex-neural/protocol && npm run typecheck -w @hex-neural/runtime && npm run typecheck -w @hex-neural/editor"
+    "typecheck": "npm run typecheck -w @hex-neural/protocol && npm run build -w @hex-neural/runtime && npm run typecheck -w @hex-neural/editor"
   }
 }
