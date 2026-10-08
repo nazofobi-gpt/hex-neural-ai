@@ -56,7 +56,7 @@ export interface BudgetPolicyV1 {
 
 export interface BudgetDecision {
   decision: "ALLOW" | "WARN" | "BLOCK";
-  reason: "WITHIN_BUDGET" | "WARNING_THRESHOLD" | "HARD_CAP" | "KILL_SWITCH" | "COST_UNKNOWN";
+  reason: "WITHIN_BUDGET" | "WARNING_THRESHOLD" | "HARD_CAP" | "KILL_SWITCH" | "COST_UNKNOWN" | "INVALID_POLICY";
   totalUsd: TelemetryValue<number>;
 }
 
@@ -75,9 +75,21 @@ export const unknown = <T>(
   sourceHealth,
 });
 
+function validUsd(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
+}
+
 function effectiveCost(line: CostLineV1): TelemetryValue<number> {
-  if (line.actualUsd.state === "KNOWN") return line.actualUsd;
-  if (line.estimatedUsd.state === "KNOWN") return line.estimatedUsd;
+  if (line.actualUsd.state === "KNOWN") {
+    return validUsd(line.actualUsd.value)
+      ? line.actualUsd
+      : unknown(`Invalid measured USD cost for ${line.kind}`, "DEGRADED");
+  }
+  if (line.estimatedUsd.state === "KNOWN") {
+    return validUsd(line.estimatedUsd.value)
+      ? line.estimatedUsd
+      : unknown(`Invalid estimated USD cost for ${line.kind}`, "DEGRADED");
+  }
   return unknown(
     `No measured or estimated cost for ${line.kind}`,
     line.actualUsd.sourceHealth === "UNAVAILABLE" && line.estimatedUsd.sourceHealth === "UNAVAILABLE"
@@ -92,13 +104,26 @@ export function aggregateCost(costs: CostLineV1[]): TelemetryValue<number> {
     const value = effectiveCost(line);
     if (value.state === "UNKNOWN") return value;
     total += value.value;
+    if (!validUsd(total)) {
+      return unknown("Cost aggregation overflowed the finite USD range", "DEGRADED");
+    }
   }
   return known(Number(total.toFixed(6)), "obs.v1:cost-aggregate");
 }
 
 export function evaluateBudget(costs: CostLineV1[], policy: BudgetPolicyV1): BudgetDecision {
   const totalUsd = aggregateCost(costs);
-  if (policy.killSwitch) return { decision: "BLOCK", reason: "KILL_SWITCH", totalUsd };
+  if (policy?.killSwitch === true) return { decision: "BLOCK", reason: "KILL_SWITCH", totalUsd };
+  if (
+    !policy ||
+    typeof policy.killSwitch !== "boolean" ||
+    !validUsd(policy.warningUsd) ||
+    !validUsd(policy.hardCapUsd) ||
+    policy.warningUsd > policy.hardCapUsd ||
+    (policy.unknownCost !== "BLOCK" && policy.unknownCost !== "WARN")
+  ) {
+    return { decision: "BLOCK", reason: "INVALID_POLICY", totalUsd };
+  }
   if (totalUsd.state === "UNKNOWN") {
     return {
       decision: policy.unknownCost === "BLOCK" ? "BLOCK" : "WARN",

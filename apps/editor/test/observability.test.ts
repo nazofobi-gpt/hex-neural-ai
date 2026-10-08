@@ -227,4 +227,61 @@ describe("obs.v1 telemetry semantics", () => {
     expect(JSON.stringify(projection.snapshot)).not.toContain("artifact://private-input");
   });
 
+  it("rejects invalid KNOWN USD rather than trusting it or silently using estimates", () => {
+    for (const invalid of [NaN, Infinity, -Infinity, -0.01]) {
+      const measured: CostLineV1[] = [{
+        kind: "provider",
+        actualUsd: known(invalid, "meter"),
+        estimatedUsd: known(0.001, "estimate"),
+      }];
+      expect(aggregateCost(measured).state).toBe("UNKNOWN");
+      expect(evaluateBudget(measured, policy)).toMatchObject({
+        decision: "BLOCK",
+        reason: "COST_UNKNOWN",
+      });
+      const estimated: CostLineV1[] = [{
+        kind: "compute",
+        actualUsd: unknown("no meter"),
+        estimatedUsd: known(invalid, "estimate"),
+      }];
+      expect(aggregateCost(estimated).state).toBe("UNKNOWN");
+    }
+  });
+
+  it("fails closed on cumulative USD overflow", () => {
+    const costs: CostLineV1[] = [0, 1].map(() => ({
+      kind: "compute",
+      actualUsd: known(Number.MAX_VALUE, "meter"),
+      estimatedUsd: unknown("no estimate"),
+    }));
+    expect(aggregateCost(costs).state).toBe("UNKNOWN");
+    expect(evaluateBudget(costs, policy).decision).toBe("BLOCK");
+  });
+
+  it("blocks invalid budget thresholds and preserves explicit kill switch", () => {
+    const costs: CostLineV1[] = [{
+      kind: "tool",
+      actualUsd: known(0.01, "meter"),
+      estimatedUsd: unknown("no estimate"),
+    }];
+    for (const invalid of [NaN, Infinity, -Infinity, -0.01]) {
+      expect(evaluateBudget(costs, { ...policy, hardCapUsd: invalid })).toMatchObject({
+        decision: "BLOCK",
+        reason: "INVALID_POLICY",
+      });
+      expect(evaluateBudget(costs, { ...policy, warningUsd: invalid })).toMatchObject({
+        decision: "BLOCK",
+        reason: "INVALID_POLICY",
+      });
+    }
+    expect(evaluateBudget(costs, { ...policy, warningUsd: 0.1 })).toMatchObject({
+      decision: "BLOCK",
+      reason: "INVALID_POLICY",
+    });
+    expect(evaluateBudget(costs, { ...policy, hardCapUsd: NaN, killSwitch: true })).toMatchObject({
+      decision: "BLOCK",
+      reason: "KILL_SWITCH",
+    });
+  });
+
 });
