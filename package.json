@@ -8,8 +8,8 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w @hex-neural/protocol && npm run build -w @hex-neural/editor",
-    "test": "npm run test -w @hex-neural/protocol && npm run test -w @hex-neural/editor",
-    "typecheck": "npm run typecheck -w @hex-neural/protocol && npm run typecheck -w @hex-neural/editor"
+    "build": "npm run build -w @hex-neural/protocol && npm run build -w @hex-neural/sdk && npm run build -w @hex-neural/editor",
+    "test": "npm run test -w @hex-neural/protocol && npm run test -w @hex-neural/sdk && npm run test -w @hex-neural/editor",
+    "typecheck": "npm run typecheck -w @hex-neural/protocol && npm run build -w @hex-neural/protocol && npm run typecheck -w @hex-neural/sdk && npm run typecheck -w @hex-neural/editor"
   }
 }
