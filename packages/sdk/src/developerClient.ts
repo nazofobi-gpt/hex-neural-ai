@@ -304,3 +304,5 @@ export class HexDeveloperClient {
     }));
   }
 }
+
+export { LocalDeveloperMockHost } from "./mockHost.js";
