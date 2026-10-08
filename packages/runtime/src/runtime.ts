@@ -104,6 +104,11 @@ function chooseBinding(
   );
 }
 
+function validAdapterMetric(value: unknown): boolean {
+  return value === undefined ||
+    (typeof value === "number" && Number.isFinite(value) && value >= 0);
+}
+
 function normalizedAdapterResult(
   result: RuntimeAdapterResult,
   signal: RuntimeSignal,
@@ -321,11 +326,44 @@ export function runExecutableGraph(
       );
     }
 
+    const invalidMetric = (["durationMs", "externalCalls", "costUnits"] as const)
+      .find((key) => !validAdapterMetric(rawResult[key]));
+    if (invalidMetric !== undefined) {
+      return finalize(
+        options,
+        executable,
+        "ADAPTER_FAILED",
+        `Adapter ${adapter.id} returned invalid ${invalidMetric} at node ${node.id}.`,
+        trace,
+        checkpoints,
+        artifacts,
+        outputs,
+        totals,
+      );
+    }
+
     const result = normalizedAdapterResult(rawResult, signal);
+    const nextRuntimeMs = totals.runtimeMs + result.durationMs;
+    const nextExternalCalls = totals.externalCalls + result.externalCalls;
+    const nextCostUnits = totals.costUnits + result.costUnits;
+    if (![nextRuntimeMs, nextExternalCalls, nextCostUnits].every(Number.isFinite)) {
+      return finalize(
+        options,
+        executable,
+        "ADAPTER_FAILED",
+        `Adapter ${adapter.id} caused non-finite cumulative metrics at node ${node.id}.`,
+        trace,
+        checkpoints,
+        artifacts,
+        outputs,
+        totals,
+      );
+    }
+
     totals.processedSignals += 1;
-    totals.runtimeMs += result.durationMs;
-    totals.externalCalls += result.externalCalls;
-    totals.costUnits += result.costUnits;
+    totals.runtimeMs = nextRuntimeMs;
+    totals.externalCalls = nextExternalCalls;
+    totals.costUnits = nextCostUnits;
 
     const processedSignal: RuntimeSignal = {
       ...signal,

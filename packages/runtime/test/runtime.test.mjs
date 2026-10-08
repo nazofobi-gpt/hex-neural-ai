@@ -429,3 +429,22 @@ test("missing external adapter fails closed", () => {
 
   assert.equal(receipt.termination.code, "ADAPTER_MISSING");
 });
+
+test("reject non-finite and negative adapter budget metrics", () => {
+  const compiled = compileGraph(chainGraph(), 515, policy());
+  assert.equal(compiled.ok, true);
+  for (const key of ["durationMs", "externalCalls", "costUnits"]) {
+    for (const value of [NaN, Infinity, -Infinity, -1]) {
+      const mock = adapters({ toolCost: 0, toolCalls: 0, toolDuration: 0 });
+      mock.byNodeId.tool.execute = () => ({ [key]: value });
+      const receipt = runExecutableGraph(compiled.executable, {
+        ...runOptions("invalid-metric"),
+        adapters: mock,
+      });
+      assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+      assert.equal(receipt.trace.length, 2);
+      assert.ok(Object.values(receipt.totals).every(Number.isFinite));
+      assert.deepEqual(deserializeRunReceipt(serializeRunReceipt(receipt)), receipt);
+    }
+  }
+});
