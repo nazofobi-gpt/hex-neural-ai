@@ -84,12 +84,22 @@ export interface RuntimeArtifactDraft {
   metadata?: Record<string, unknown>;
 }
 
+export interface ProviderMeterV1 {
+  /** The adapter's provider-supplied metered charge, NOT an estimate or costUnits. */
+  amountUsd: number;
+  /** Distinct provider billing/usage receipt reference for audit and deduplication. */
+  receiptId: string;
+  /** Exact provider/meter identity; never a private API key or raw payload. */
+  source: string;
+}
+
 export interface RuntimeAdapterResult {
   payloadRef?: string | null;
   schema?: string | null;
   externalCalls?: number;
   costUnits?: number;
   durationMs?: number;
+  providerMeter?: ProviderMeterV1;
   artifact?: RuntimeArtifactDraft | null;
 }
 
@@ -129,6 +139,7 @@ export interface RuntimeTraceEvent {
   durationMs: number;
   externalCalls: number;
   costUnits: number;
+  providerMeter?: ProviderMeterV1;
 }
 
 export interface RuntimeTotals {

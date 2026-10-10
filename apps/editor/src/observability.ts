@@ -205,6 +205,12 @@ export function virtualizeLogWindow(
 }
 
 
+export interface MeteredRuntimeTraceV1 {
+  traceId: string;
+  externalCalls: number;
+  providerMeter?: { amountUsd: number; receiptId: string; source: string };
+}
+
 export interface RuntimeReceiptProjectionV1 {
   runId: string;
   graphId: string;
@@ -219,6 +225,8 @@ export interface RuntimeReceiptProjectionV1 {
   maxCostUnits: number | null;
   status: "completed" | "terminated";
   terminationCode: string;
+  /** Actual runtime trace from a provider adapter, not a synthetic USD conversion. */
+  providerTrace?: MeteredRuntimeTraceV1[];
 }
 
 export interface RuntimeUnitBudgetEvidenceV1 {
@@ -272,6 +280,38 @@ export function projectRuntimeReceipt(
       "UNAVAILABLE",
     ),
   }));
+
+
+  // Only a fully metered and uniquely referenced set of external calls
+  // can expose an adapter-reported provider USD subtotal. Other costs
+  // remain UNKNOWN; this does not claim a complete end-to-end invoice.
+  const billable = (receipt.providerTrace ?? []).filter((event) => event.externalCalls > 0);
+  if (billable.length > 0) {
+    const seenReceipts = new Set<string>();
+    let usd = 0;
+    let metered = true;
+    for (const event of billable) {
+      const meter = event.providerMeter;
+      if (!meter || !event.traceId || !Number.isFinite(meter.amountUsd) ||
+          meter.amountUsd < 0 || !meter.receiptId?.trim() || !meter.source?.trim() ||
+          seenReceipts.has(meter.receiptId)) {
+        metered = false;
+        break;
+      }
+      seenReceipts.add(meter.receiptId);
+      usd += meter.amountUsd;
+      if (!Number.isFinite(usd)) {
+        metered = false;
+        break;
+      }
+    }
+    if (metered) {
+      costs[0] = {
+        ...costs[0],
+        actualUsd: known(usd, "obs.v1:adapter-reported-provider-meter-receipts"),
+      };
+    }
+  }
 
   const invalidRuntimeUnits = !Number.isFinite(receipt.costUnits) || receipt.costUnits < 0 ||
     (receipt.maxCostUnits !== null && (!Number.isFinite(receipt.maxCostUnits) || receipt.maxCostUnits < 0));
