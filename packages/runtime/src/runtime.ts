@@ -112,8 +112,9 @@ function validAdapterMetric(value: unknown): boolean {
 function normalizedAdapterResult(
   result: RuntimeAdapterResult,
   signal: RuntimeSignal,
-): Required<Omit<RuntimeAdapterResult, "artifact">> & {
+): Required<Omit<RuntimeAdapterResult, "artifact" | "providerMeter">> & {
   artifact: RuntimeAdapterResult["artifact"];
+  providerMeter: RuntimeAdapterResult["providerMeter"];
 } {
   return {
     payloadRef:
@@ -124,6 +125,7 @@ function normalizedAdapterResult(
     externalCalls: Math.max(0, result.externalCalls ?? 0),
     costUnits: Math.max(0, result.costUnits ?? 0),
     durationMs: Math.max(0, result.durationMs ?? 0),
+    providerMeter: result.providerMeter === undefined ? undefined : { ...result.providerMeter },
     artifact: result.artifact ?? null,
   };
 }
@@ -342,6 +344,25 @@ export function runExecutableGraph(
       );
     }
 
+    // Metered USD must come from a concrete external adapter billing receipt.
+    // costUnits are not currency; a missing receipt remains UNKNOWN downstream.
+    if (rawResult.providerMeter !== undefined) {
+      const meter = rawResult.providerMeter;
+      const valid = meter !== null && typeof meter === "object" &&
+        typeof meter.amountUsd === "number" &&
+        Number.isFinite(meter.amountUsd) && meter.amountUsd >= 0 &&
+        typeof meter.receiptId === "string" && meter.receiptId.trim().length > 0 &&
+        typeof meter.source === "string" && meter.source.trim().length > 0 &&
+        typeof rawResult.externalCalls === "number" && rawResult.externalCalls > 0;
+      if (!valid) {
+        return finalize(
+          options, executable, "ADAPTER_FAILED",
+          `Adapter ${adapter.id} returned invalid providerMeter at node ${node.id}.`,
+          trace, checkpoints, artifacts, outputs, totals,
+        );
+      }
+    }
+
     const result = normalizedAdapterResult(rawResult, signal);
     const nextRuntimeMs = totals.runtimeMs + result.durationMs;
     const nextExternalCalls = totals.externalCalls + result.externalCalls;
@@ -385,6 +406,7 @@ export function runExecutableGraph(
       durationMs: result.durationMs,
       externalCalls: result.externalCalls,
       costUnits: result.costUnits,
+      ...(result.providerMeter === undefined ? {} : { providerMeter: { ...result.providerMeter } }),
     });
 
     checkpoints.push(
