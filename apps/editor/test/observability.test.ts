@@ -227,6 +227,57 @@ describe("obs.v1 telemetry semantics", () => {
     expect(JSON.stringify(projection.snapshot)).not.toContain("artifact://private-input");
   });
 
+
+  it("shows adapter-reported provider charges from real run trace and leaves other costs UNKNOWN", () => {
+    const projection = projectRuntimeReceipt({
+      runId: "real-run-adapter-channel",
+      graphId: "g1",
+      runtimeMs: 10,
+      processedSignals: 2,
+      costUnits: 4,
+      maxCostUnits: 8,
+      status: "completed",
+      terminationCode: "COMPLETED",
+      providerTrace: [
+        { traceId: "trace-1", externalCalls: 1,
+          providerMeter: { amountUsd: 0.017, source: "provider-usage", receiptId: "bill-1" } },
+        { traceId: "trace-1", externalCalls: 1,
+          providerMeter: { amountUsd: 0.003, source: "provider-usage", receiptId: "bill-2" } },
+      ],
+    });
+    expect(projection.snapshot.costs[0].actualUsd).toEqual(
+      known(0.02, "obs.v1:adapter-reported-provider-meter-receipts"),
+    );
+    expect(projection.snapshot.costs.slice(1).every((line) => line.actualUsd.state === "UNKNOWN"))
+      .toBe(true);
+    // A provider subtotal is not a whole-run cost: the overall budget stays fail-closed.
+    expect(evaluateBudget(projection.snapshot.costs, policy).decision).toBe("BLOCK");
+  });
+
+  it("rejects partial/duplicate/invalid provider meter receipts, not inventing actual USD", () => {
+    const common = {
+      runId: "unknown-meter",
+      graphId: "g1",
+      runtimeMs: 10,
+      processedSignals: 2,
+      costUnits: 4,
+      maxCostUnits: 8,
+      status: "completed" as const,
+      terminationCode: "COMPLETED",
+    };
+    const good = { traceId: "trace-1", externalCalls: 1,
+      providerMeter: { amountUsd: 0.01, receiptId: "bill-1", source: "provider" } };
+    const trials = [
+      [good, { traceId: "trace-1", externalCalls: 1 }],
+      [good, { ...good }],
+      [{ ...good, providerMeter: { ...good.providerMeter, amountUsd: -1 } }],
+    ];
+    for (const providerTrace of trials) {
+      const result = projectRuntimeReceipt({ ...common, providerTrace });
+      expect(result.snapshot.costs[0].actualUsd.state).toBe("UNKNOWN");
+    }
+  });
+
   it("rejects invalid KNOWN USD rather than trusting it or silently using estimates", () => {
     for (const invalid of [NaN, Infinity, -Infinity, -0.01]) {
       const measured: CostLineV1[] = [{
