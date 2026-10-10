@@ -284,4 +284,48 @@ describe("obs.v1 telemetry semantics", () => {
     });
   });
 
+  it("fails closed when the cost line set is empty", () => {
+    expect(aggregateCost([]).state).toBe("UNKNOWN");
+    expect(evaluateBudget([], policy)).toMatchObject({
+      decision: "BLOCK", reason: "COST_UNKNOWN",
+    });
+  });
+
+  it("compares sub-micro USD costs without rounding away hard-cap breaches", () => {
+    const costs: CostLineV1[] = [{
+      kind: "tool", actualUsd: known(0.0000007, "meter"),
+      estimatedUsd: unknown("no estimate"),
+    }];
+    expect(aggregateCost(costs)).toEqual(known(0.0000007, "obs.v1:cost-aggregate"));
+    expect(evaluateBudget(costs, { ...policy, warningUsd: 0.0000001, hardCapUsd: 0.0000006 }))
+      .toMatchObject({ decision: "BLOCK", reason: "HARD_CAP" });
+  });
+
+  it("blocks invalid runtime unit receipts instead of allowing unsafe budgets", () => {
+    const base = {
+      runId: "invalid-budget-fixture", graphId: "graph-1",
+      runtimeMs: 100, processedSignals: 1, costUnits: 1, maxCostUnits: 2,
+      status: "completed" as const, terminationCode: "COMPLETED",
+    };
+    for (const invalid of [NaN, Infinity, -Infinity, -1]) {
+      expect(projectRuntimeReceipt({ ...base, costUnits: invalid }).runtimeBudget)
+        .toMatchObject({ decision: "BLOCK", reason: "RUNTIME_BUDGET_INVALID" });
+      expect(projectRuntimeReceipt({ ...base, maxCostUnits: invalid }).runtimeBudget)
+        .toMatchObject({ decision: "BLOCK", reason: "RUNTIME_BUDGET_INVALID" });
+    }
+  });
+
+  it("rejects invalid KNOWN health metrics instead of reporting HEALTHY", () => {
+    const healthy: RunMetricsV1 = {
+      queueAgeMs: known(0, "fixture"), throughputPerSecond: known(2, "fixture"),
+      errorCount: known(0, "fixture"), restartCount: known(0, "fixture"),
+      replayCount: known(0, "fixture"),
+    };
+    for (const key of ["queueAgeMs", "throughputPerSecond", "errorCount", "restartCount", "replayCount"] as const) {
+      for (const invalid of [NaN, Infinity, -Infinity, -1]) {
+        expect(deriveHealth({ ...healthy, [key]: known(invalid, "fixture") })).toBe("UNKNOWN");
+      }
+    }
+  });
+
 });

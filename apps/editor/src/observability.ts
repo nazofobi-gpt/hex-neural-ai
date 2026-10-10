@@ -99,6 +99,7 @@ function effectiveCost(line: CostLineV1): TelemetryValue<number> {
 }
 
 export function aggregateCost(costs: CostLineV1[]): TelemetryValue<number> {
+  if (costs.length === 0) return unknown("No cost lines; total cost is unmeasured.", "UNAVAILABLE");
   let total = 0;
   for (const line of costs) {
     const value = effectiveCost(line);
@@ -108,7 +109,7 @@ export function aggregateCost(costs: CostLineV1[]): TelemetryValue<number> {
       return unknown("Cost aggregation overflowed the finite USD range", "DEGRADED");
     }
   }
-  return known(Number(total.toFixed(6)), "obs.v1:cost-aggregate");
+  return known(total, "obs.v1:cost-aggregate");
 }
 
 export function evaluateBudget(costs: CostLineV1[], policy: BudgetPolicyV1): BudgetDecision {
@@ -141,11 +142,16 @@ export function evaluateBudget(costs: CostLineV1[], policy: BudgetPolicyV1): Bud
 }
 
 function metricNumber(value: TelemetryValue<number>): number | null {
-  return value.state === "KNOWN" ? value.value : null;
+  return value.state === "KNOWN" && Number.isFinite(value.value) && value.value >= 0
+    ? value.value
+    : null;
 }
 
 export function deriveHealth(metrics: RunMetricsV1): HealthState {
-  const essential = [metrics.queueAgeMs, metrics.throughputPerSecond, metrics.errorCount];
+  const all = [metrics.queueAgeMs, metrics.throughputPerSecond, metrics.errorCount, metrics.restartCount, metrics.replayCount];
+  if (all.some((value, index) => value.state === "KNOWN" &&
+    (metricNumber(value) === null || (index >= 2 && !Number.isInteger(value.value))))) return "UNKNOWN";
+  const essential = all.slice(0, 3);
   if (essential.some((value) => value.state === "UNKNOWN")) return "UNKNOWN";
 
   const errors = metricNumber(metrics.errorCount) ?? 0;
@@ -219,7 +225,7 @@ export interface RuntimeUnitBudgetEvidenceV1 {
   measuredCostUnits: number;
   maxCostUnits: number | null;
   decision: "ALLOW" | "BLOCK" | "UNKNOWN";
-  reason: "WITHIN_RUNTIME_BUDGET" | "MAX_COST_EXCEEDED" | "RUNTIME_BUDGET_UNKNOWN";
+  reason: "WITHIN_RUNTIME_BUDGET" | "MAX_COST_EXCEEDED" | "RUNTIME_BUDGET_UNKNOWN" | "RUNTIME_BUDGET_INVALID";
 }
 
 export interface RuntimeObservabilityProjectionV1 {
@@ -267,8 +273,17 @@ export function projectRuntimeReceipt(
     ),
   }));
 
+  const invalidRuntimeUnits = !Number.isFinite(receipt.costUnits) || receipt.costUnits < 0 ||
+    (receipt.maxCostUnits !== null && (!Number.isFinite(receipt.maxCostUnits) || receipt.maxCostUnits < 0));
   const runtimeBudget: RuntimeUnitBudgetEvidenceV1 =
-    receipt.maxCostUnits === null
+    invalidRuntimeUnits
+      ? {
+          measuredCostUnits: receipt.costUnits,
+          maxCostUnits: receipt.maxCostUnits,
+          decision: "BLOCK",
+          reason: "RUNTIME_BUDGET_INVALID",
+        }
+      : receipt.maxCostUnits === null
       ? {
           measuredCostUnits: receipt.costUnits,
           maxCostUnits: null,
