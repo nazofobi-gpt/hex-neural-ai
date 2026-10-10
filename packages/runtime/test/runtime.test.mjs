@@ -245,6 +245,59 @@ test("input -> transform -> tool -> evaluator -> output completes without SNN", 
   assert.equal(receipt.totals.costUnits, 2);
 });
 
+
+test("external adapter provider billing reference reaches the run trace without converting cost units", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const fixture = adapters();
+  fixture.byNodeId.tool.execute = () => ({
+    externalCalls: 1,
+    costUnits: 2,
+    durationMs: 1,
+    providerMeter: {
+      amountUsd: 0.017,
+      receiptId: "provider-bill-17",
+      source: "provider-usage-endpoint",
+    },
+  });
+  const receipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("actual-usd-meter-channel"),
+    adapters: fixture,
+  });
+  assert.equal(receipt.status, "completed");
+  assert.equal(receipt.totals.costUnits, 2);
+  assert.deepEqual(receipt.trace.find((e) => e.nodeId === "tool").providerMeter, {
+    amountUsd: 0.017,
+    receiptId: "provider-bill-17",
+    source: "provider-usage-endpoint",
+  });
+});
+
+test("runtime rejects fake or unbound provider money measurements", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const invalidMeters = [
+    { amountUsd: -1, receiptId: "r", source: "provider" },
+    { amountUsd: NaN, receiptId: "r", source: "provider" },
+    { amountUsd: 1, receiptId: "", source: "provider" },
+    { amountUsd: 1, receiptId: "r", source: "" },
+  ];
+  for (const providerMeter of invalidMeters) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => ({
+      externalCalls: 1,
+      costUnits: 2,
+      providerMeter,
+    });
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions("invalid-money-meter"),
+      adapters: fixture,
+    });
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.trace.find((e) => e.nodeId === "tool"), undefined);
+  }
+});
+
 test("same graph version, seed and fixtures produce byte-identical replay receipts", () => {
   const compiledA = compileGraph(chainGraph(), 777, policy());
   const compiledB = compileGraph(chainGraph(), 777, policy());
