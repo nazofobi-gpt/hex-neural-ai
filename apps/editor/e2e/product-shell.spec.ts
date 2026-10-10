@@ -46,8 +46,8 @@ test("project error is explicit and retry-safe", async ({ page }) => {
 
 test("navigation exposes intentional empty states and quick-create", async ({ page }) => {
   await createWorkspace(page);
-  await page.getByRole("button", { name: "Activity", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Activity", level: 2 })).toBeVisible();
+  await page.getByRole("button", { name: "Recents", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Recents", level: 2 })).toBeVisible();
   await expect(page.getByText(/does not represent demo data/)).toBeVisible();
   await page.getByRole("button", { name: /Quick create/ }).click();
   await expect(page.getByRole("heading", { name: "First Neural Workflow" })).toBeVisible();
@@ -72,4 +72,28 @@ test("authentication failure offers typed reconnect remediation", async ({ page 
   await page.getByRole("button", { name: "Capabilities", exact: true }).click();
   await page.getByRole("button", { name: "Test connection" }).click();
   await expect(page.getByRole("alert")).toContainText("Reconnect");
+});
+
+
+test("Activity exposes correlated obs.v1 fixture and an explicit hard budget gate", async ({ page }) => {
+  await createWorkspace(page);
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Observability & cost" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Correlation" })).toContainText("run-preview-001");
+  await expect(page.getByRole("region", { name: "Runtime health" })).toContainText("HEALTHY");
+  await expect(page.getByRole("region", { name: "Cost budget" })).toContainText("Run gate: ALLOW");
+  await expect(page.getByText("fixture only", { exact: false }).first()).toBeVisible();
+});
+
+test("Activity fails closed when cost telemetry is unknown", async ({ page }) => {
+  await createWorkspace(page, "/?mockTelemetryUnknown=1");
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Runtime health" })).toContainText("UNKNOWN");
+  await expect(page.getByRole("region", { name: "Cost budget" })).toContainText("Run gate: BLOCK · COST_UNKNOWN");
+});
+
+test("Activity blocks a run when measured cost reaches the hard cap", async ({ page }) => {
+  await createWorkspace(page, "/?mockBudgetExceeded=1");
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Cost budget" })).toContainText("Run gate: BLOCK · HARD_CAP");
 });

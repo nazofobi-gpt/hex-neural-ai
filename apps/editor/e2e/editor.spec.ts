@@ -202,3 +202,25 @@ test("2k benchmark renders at least 2,000 visible hexes and captures evidence", 
 
   console.log("G197_BENCHMARK", JSON.stringify(metrics));
 });
+
+
+async function openActivity(page: Page, path = "/"): Promise<void> {
+  await page.goto(path);
+  await page.getByRole("button", { name: "Continue with preview account" }).click();
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await page.getByRole("button", { name: "Activity" }).click();
+  await expect(page.getByRole("heading", { name: "Observability & cost" })).toBeVisible();
+}
+
+test("observability UNKNOWN telemetry blocks budget without fabricating values", async ({ page }) => {
+  await openActivity(page, "/?mockTelemetryUnknown=1");
+  await expect(page.getByRole("region", { name: "Runtime health" })).toContainText("UNKNOWN");
+  await expect(page.getByRole("region", { name: "Cost budget" })).toContainText("Run gate: BLOCK · COST_UNKNOWN");
+  await expect(page.getByText("Versioned local evidence demonstrates correlation, UNKNOWN semantics and hard budget enforcement.")).toBeVisible();
+});
+
+test("observability hard cap blocks measured overspend", async ({ page }) => {
+  await openActivity(page, "/?mockBudgetExceeded=1");
+  await expect(page.getByRole("region", { name: "Cost budget" })).toContainText("Run gate: BLOCK · HARD_CAP");
+  await expect(page.getByRole("region", { name: "Cost budget" })).toContainText("0.066 effective cost");
+});
