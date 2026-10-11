@@ -34,6 +34,7 @@ interface CanvasActions {
   remove: () => void;
   undo: () => void;
   redo: () => void;
+  select: (id: string) => void;
 }
 
 interface EditorMetrics {
@@ -68,6 +69,8 @@ export function HexCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<CanvasActions | null>(null);
   const [status, setStatus] = useState("Ready · 37 hexes");
+  const [navigatorNodes, setNavigatorNodes] = useState<EditorHex[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -262,6 +265,8 @@ export function HexCanvas() {
         adjacentFaceCount,
       };
       window.__HEX_EDITOR_METRICS__ = lastMetrics;
+      setNavigatorNodes(editor.nodes.map((node) => ({ ...node })));
+      setSelectedNodeId(selectedId);
 
       if (benchmarkMode) {
         updateStatus("Benchmark");
@@ -328,6 +333,53 @@ export function HexCanvas() {
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
     const onKeyDown = (event: KeyboardEvent) => {
+      const directions: Record<string, AxialCoordinate> = {
+        ArrowLeft: { q: -1, r: 0 },
+        ArrowRight: { q: 1, r: 0 },
+        ArrowUp: { q: 0, r: -1 },
+        ArrowDown: { q: 0, r: 1 },
+      };
+      const direction = directions[event.key];
+      if (direction) {
+        event.preventDefault();
+        if (!selectedId) {
+          selectedId = editor.nodes[0]?.id ?? null;
+          render();
+          updateStatus("Keyboard selected");
+          return;
+        }
+
+        const selected = nodeAt(selectedId);
+        if (!selected) {
+          return;
+        }
+        const target = {
+          q: selected.q + direction.q,
+          r: selected.r + direction.r,
+        };
+        if (event.shiftKey) {
+          if (editor.move(selectedId, target)) {
+            render();
+            updateStatus("Keyboard moved");
+          } else {
+            updateStatus("Move blocked");
+          }
+          return;
+        }
+
+        const adjacent = editor.nodes.find(
+          (node) => node.q === target.q && node.r === target.r,
+        );
+        if (adjacent) {
+          selectedId = adjacent.id;
+          render();
+          updateStatus("Keyboard selected");
+        } else {
+          updateStatus("No adjacent node");
+        }
+        return;
+      }
+
       const command = event.ctrlKey || event.metaKey;
       if (command && event.key.toLowerCase() === "z") {
         event.preventDefault();
@@ -382,6 +434,14 @@ export function HexCanvas() {
           updateStatus("Redo");
         }
       },
+      select: (id: string) => {
+        if (nodeAt(id)) {
+          selectedId = id;
+          render();
+          updateStatus("Navigator selected");
+          canvas.focus();
+        }
+      },
     };
 
     render();
@@ -420,6 +480,23 @@ export function HexCanvas() {
         </span>
       </div>
       <div ref={hostRef} className="canvas-host" />
+      <nav className="graph-navigator" aria-label="Graph navigator">
+        <h2>Graph navigator</h2>
+        <p>Choose a node without dragging. Use arrow keys to move selection; hold Shift to move the selected node.</p>
+        <ol>
+          {navigatorNodes.map((node) => (
+            <li key={node.id}>
+              <button
+                type="button"
+                aria-current={node.id === selectedNodeId ? "true" : undefined}
+                onClick={() => actionsRef.current?.select(node.id)}
+              >
+                {node.label} at q {node.q}, r {node.r}
+              </button>
+            </li>
+          ))}
+        </ol>
+      </nav>
       <footer className="hint">
         Drag a hex to snap · drag empty space to pan · wheel to zoom · Ctrl/Cmd+Z
         to undo
