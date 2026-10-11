@@ -50,6 +50,33 @@ test("toolbar mutations are reflected in the live editor", async ({ page }) => {
   await expect(canvas).toBeFocused();
 });
 
+test("keyboard navigation selects and moves nodes without drag", async ({ page }) => {
+  await page.goto("/");
+
+  const canvas = page.getByLabel(
+    "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+  );
+  await canvas.focus();
+  await canvas.press("ArrowRight");
+
+  let metrics = await readMetrics(page);
+  expect(metrics.selectedId).toBe("hex-1");
+  expect(metrics.selectedQ).toBe(-3);
+  expect(metrics.selectedR).toBe(0);
+
+  await canvas.press("Shift+ArrowLeft");
+  metrics = await readMetrics(page);
+  expect(metrics.selectedId).toBe("hex-1");
+  expect(metrics.selectedQ).toBe(-4);
+  expect(metrics.selectedR).toBe(0);
+
+  const navigator = page.getByRole("navigation", { name: "Graph navigator" });
+  await expect(navigator.getByRole("button")).toHaveCount(37);
+  await expect(
+    navigator.getByRole("button", { name: "Hex 1 at q -4, r 0" }),
+  ).toHaveAttribute("aria-current", "true");
+});
+
 test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face adjacency", async ({
   page,
 }) => {
