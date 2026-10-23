@@ -18,7 +18,39 @@ describe("capability registry", () => {
   it("routes authentication failure to reconnect and rolls back reversible changes", () => {
     expect(registerCapability(base, { ...healthy, authenticated: false })).toMatchObject({ state: "degraded", reason: expect.stringContaining("Reconnect") });
     const disabled = disableCapability(registerCapability(base, healthy));
-    expect(rollbackCapability(disabled)).toMatchObject({ state: "ready", version: 3, reason: "Rolled back to configuration v1." });
+    expect(rollbackCapability(disabled)).toMatchObject({ state: "disabled", version: 3, reason: expect.stringContaining("fresh provider verification required") });
+  });
+
+  it("never restores ready via rollback without a new provider-bound probe", async () => {
+    const ready = registerCapability(base, healthy);
+    const disabled = disableCapability(ready);
+    const rolled = rollbackCapability(disabled);
+    expect(rolled.state).toBe("disabled");
+    expect(rolled.checkedAt).toBe(disabled.checkedAt);
+    expect(selectFallback([rolled], "documents:read")).toBeNull();
+
+    const now = Date.parse("2026-10-24T00:48:00.000Z");
+    const proof = async (request: { capabilityId: string; credentialRef: string | null; challenge: string }) => ({
+      ...healthy, checkedAt: new Date(now).toISOString(),
+      capabilityId: request.capabilityId, credentialRef: request.credentialRef, challenge: request.challenge,
+    });
+    const reverified = await verifyAndEnableCapability(rolled, proof, () => now);
+    expect(reverified.state).toBe("ready");
+
+    // Even a ready-to-ready configuration rollback must invalidate old permission proof.
+    const readyWithHistory = {
+      ...ready, version: 2,
+      history: [{
+        version: 1, state: "ready" as const,
+        credentialRef: "vault://workspace/old",
+        permissions: [{ scope: "documents:write", access: "write" as const }],
+        checkedAt: healthy.checkedAt, reason: null,
+      }],
+    };
+    const restored = rollbackCapability(readyWithHistory);
+    expect(restored.state).toBe("degraded");
+    expect(restored.credentialRef).toBe("vault://workspace/old");
+    expect(selectFallback([restored], "documents:write")).toBeNull();
   });
 
   it("selects only healthy, permission-compatible fallbacks deterministically", () => {

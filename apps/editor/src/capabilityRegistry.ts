@@ -35,7 +35,24 @@ export function disableCapability(record: CapabilityRecord, reason = "Disabled b
 export function rollbackCapability(record: CapabilityRecord): CapabilityRecord {
   const previous = record.history.at(-1);
   if (!previous) return record;
-  return { ...record, ...previous, version: record.version + 1, permissions: previous.permissions.map((permission) => ({ ...permission })), history: record.history.slice(0, -1), reason: `Rolled back to configuration v${previous.version}.` };
+  // Restoring an old configuration must not resurrect an old auth/scope probe.
+  // A formerly ready revision needs a new provider-bound verification before use.
+  const requiresReverification = previous.state === "ready";
+  const state: CapabilityState = requiresReverification
+    ? record.state === "disabled" || record.state === "quarantined" ? record.state : "degraded"
+    : previous.state;
+  return {
+    ...record,
+    ...previous,
+    version: record.version + 1,
+    state,
+    permissions: previous.permissions.map((permission) => ({ ...permission })),
+    checkedAt: requiresReverification ? record.checkedAt : previous.checkedAt,
+    history: record.history.slice(0, -1),
+    reason: requiresReverification
+      ? `Rolled back configuration v${previous.version}; fresh provider verification required before enabling.`
+      : `Rolled back to configuration v${previous.version}.`,
+  };
 }
 
 export function selectFallback(records: CapabilityRecord[], requiredScope: string): CapabilityRecord | null {
