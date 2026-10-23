@@ -123,7 +123,7 @@ export async function collectModelGrowthBenchmark(
   const maxCases=options.maxCases??256;
   validateEvalSet(evalSet,maxCases);
   if(!baseline.id.trim()||!baseline.version.trim()||!candidate.id.trim()||!candidate.version.trim())throw new Error("INVALID_RUNNER_IDENTITY");
-  const now=options.now??(()=>Date.now());
+  const now=options.now??(()=>performance.now());
   const collectedAt=options.collectedAt??(()=>new Date().toISOString());
   const samples:BenchmarkSample[]=[];
   for(const testCase of evalSet.cases){

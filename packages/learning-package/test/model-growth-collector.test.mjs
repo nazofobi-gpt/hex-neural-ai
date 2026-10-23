@@ -25,3 +25,24 @@ test("collector rejects unversioned evidence",async()=>{
   const r={id:"r",version:"1",async execute(){return{output:"1",memoryMb:1,cost:1,securityRegression:false,routingValid:true}}};
   await assert.rejects(()=>collectModelGrowthBenchmark({id:"",version:"",checksum:"",cases:[{id:"a",input:"x"}]},r,r,()=>1,policy),/INVALID_EVAL_SET_IDENTITY/);
 });
+
+test("collector uses monotonic time instead of wall-clock Date.now",async()=>{
+  const originalNow=Date.now;
+  const runner=(id,q)=>({id,version:"v1",async execute(){return{output:String(q),memoryMb:100,cost:1,securityRegression:false,routingValid:true}}});
+  Date.now=()=>{throw new Error("WALL_CLOCK_USED_FOR_LATENCY");};
+  try{
+    const receipt=await collectModelGrowthBenchmark(
+      {id:"monotonic-clock",version:"1",checksum:"fixture-monotonic",cases:[{id:"a",input:"p-a"}]},
+      runner("base",.7),runner("candidate",.8),(_c,o)=>Number(o),policy,
+      {collectedAt:()=>"2026-10-23T20:36:48Z"}
+    );
+    assert.equal(receipt.provenance.measurementMethod,"EXECUTED_RUNNERS_MONOTONIC_CLOCK");
+    assert.equal(receipt.samples.length,1);
+    assert.ok(Number.isFinite(receipt.samples[0].baselineLatencyMs));
+    assert.ok(Number.isFinite(receipt.samples[0].candidateLatencyMs));
+    assert.ok(receipt.samples[0].baselineLatencyMs>=0);
+    assert.ok(receipt.samples[0].candidateLatencyMs>=0);
+  }finally{
+    Date.now=originalNow;
+  }
+});
