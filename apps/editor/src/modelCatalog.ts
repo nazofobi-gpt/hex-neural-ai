@@ -2,6 +2,9 @@ import type { ConnectionInput } from "./capabilityRegistry";
 
 export type ModelDataClass = "public" | "synthetic" | "internal" | "confidential" | "pii" | "secret";
 
+// Experimental profiles are display metadata, not authority to broaden data access.
+const EXPERIMENTAL_SAFE_DATA_CLASSES: ReadonlySet<ModelDataClass> = new Set(["public", "synthetic"]);
+
 export interface ExperimentalModelProfile {
   connection: ConnectionInput;
   provider: string;
@@ -58,11 +61,17 @@ export function evaluateExperimentalModelUse(
   if (!gate.liveProbePassed) return { allowed: false, reason: "Live provider/model probe is required before activation." };
   if (!gate.schemaCompatible) return { allowed: false, reason: "Provider schema is not compatible with the model capability contract." };
   if (!gate.termsVerified) return { allowed: false, reason: "Current provider terms/privacy policy have not been verified." };
-  if (!gate.deterministicFallbackAvailable && profile.fallbackRequired) {
+  if (!gate.deterministicFallbackAvailable) {
     return { allowed: false, reason: "A deterministic fallback capability is required." };
   }
-  if (gate.productionCritical && !profile.productionCriticalAllowed) {
+  if (gate.productionCritical) {
     return { allowed: false, reason: "Experimental models cannot own production-critical execution." };
+  }
+  if (!Array.isArray(profile.allowedDataClasses) || !Array.isArray(profile.blockedDataClasses)) {
+    return { allowed: false, reason: "Experimental model data-class policy is malformed." };
+  }
+  if (!EXPERIMENTAL_SAFE_DATA_CLASSES.has(gate.dataClass) || profile.blockedDataClasses.includes(gate.dataClass)) {
+    return { allowed: false, reason: `Data class ${gate.dataClass} is blocked by the experimental model safety policy.` };
   }
   if (!profile.allowedDataClasses.includes(gate.dataClass)) {
     return { allowed: false, reason: `Data class ${gate.dataClass} is blocked for this experimental model.` };

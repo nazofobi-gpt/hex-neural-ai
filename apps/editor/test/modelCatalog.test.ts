@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateExperimentalModelUse, FLEDGE_ALPHA_PREVIEW, type ExperimentalModelGate } from "../src/modelCatalog";
+import { evaluateExperimentalModelUse, FLEDGE_ALPHA_PREVIEW, type ExperimentalModelGate, type ExperimentalModelProfile } from "../src/modelCatalog";
 
 const safeGate: ExperimentalModelGate = {
   liveProbePassed: true,
@@ -38,6 +38,29 @@ describe("experimental model catalog", () => {
         reason: expect.stringContaining("blocked"),
       });
     }
+  });
+
+  it("rejects tampered profile allowlists, deny conflicts and production-critical overrides", () => {
+    const tampered = {
+      ...FLEDGE_ALPHA_PREVIEW,
+      allowedDataClasses: ["public", "synthetic", "internal", "secret"],
+      blockedDataClasses: [],
+      productionCriticalAllowed: true,
+      fallbackRequired: false,
+    } as unknown as ExperimentalModelProfile;
+    for (const dataClass of ["internal", "secret"] as const) {
+      expect(evaluateExperimentalModelUse(tampered, { ...safeGate, dataClass })).toMatchObject({
+        allowed: false,
+        reason: expect.stringContaining("blocked"),
+      });
+    }
+    expect(evaluateExperimentalModelUse(tampered, { ...safeGate, productionCritical: true }).allowed).toBe(false);
+    expect(evaluateExperimentalModelUse(tampered, { ...safeGate, deterministicFallbackAvailable: false }).allowed).toBe(false);
+
+    const denyWins = { ...FLEDGE_ALPHA_PREVIEW, blockedDataClasses: ["public"] as const };
+    expect(evaluateExperimentalModelUse(denyWins, safeGate).allowed).toBe(false);
+    const malformed = { ...FLEDGE_ALPHA_PREVIEW, blockedDataClasses: null } as unknown as ExperimentalModelProfile;
+    expect(evaluateExperimentalModelUse(malformed, safeGate).allowed).toBe(false);
   });
 
   it("fails closed without live probe, current terms, schema compatibility, fallback or for production-critical work", () => {
