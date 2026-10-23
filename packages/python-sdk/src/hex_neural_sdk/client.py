@@ -250,6 +250,7 @@ class DeveloperClient:
         if (
             not isinstance(response_run_id, str)
             or _ID_PATTERN.fullmatch(response_run_id) is None
+            or response_run_id != run
             or not isinstance(events, Sequence)
             or isinstance(events, (str, bytes))
             or len(events) > _MAX_LOG_EVENTS

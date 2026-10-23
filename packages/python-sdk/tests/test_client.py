@@ -86,6 +86,14 @@ class DeveloperClientTests(unittest.TestCase):
         self.assertEqual(client.start_run("project-a", "graph-a", "v1").run_id, "run-1")
         self.assertEqual(client.read_logs("run-1").events[0].message, "queued")
 
+    def test_log_response_run_id_mismatch_fails_closed(self):
+        transport = RecordingTransport({"runId": "another-run", "events": []})
+        client = DeveloperClient(transport, AuthContext("vault://workspace/dev", ("logs:read",)))
+        with self.assertRaises(DeveloperClientError) as raised:
+            client.read_logs("run-1")
+        self.assertEqual(raised.exception.code, "INVALID_TRANSPORT_RESPONSE")
+        self.assertEqual(transport.calls[0]["path"], "/v1/runs/run-1/logs")
+
     def test_unbounded_logs_fail_closed(self):
         transport = RecordingTransport(
             {
