@@ -38,10 +38,39 @@ describe("capability registry", () => {
     expect(recordHealth(disabled, { state: "healthy", checkedAt: healthy.checkedAt, detail: "recovered" }).state).toBe("disabled");
   });
 
-  it("requires a fresh auth, schema and permission probe before re-enable", () => {
+  it("requires a live, capability-bound auth/schema/scope probe to re-enable", async () => {
+    const now = Date.parse("2026-10-23T21:50:00.000Z");
+    const fresh = { ...healthy, checkedAt: new Date(now).toISOString() };
     const disabled = disableCapability(registerCapability(base, healthy));
-    expect(verifyAndEnableCapability(disabled, { ...healthy, grantedScopes: [] }).state).toBe("quarantined");
-    expect(verifyAndEnableCapability(disabled, healthy)).toMatchObject({ state: "ready", version: 3, reason: expect.stringContaining("Re-enabled") });
+    const proof = (overrides: Record<string, unknown> = {}) => async (request: { capabilityId: string; credentialRef: string | null; challenge: string }) =>
+      ({ ...fresh, capabilityId: request.capabilityId, credentialRef: request.credentialRef, challenge: request.challenge, ...overrides });
+
+    await expect(verifyAndEnableCapability(disabled, proof(), () => now)).resolves.toMatchObject({
+      state: "ready", version: 3, checkedAt: fresh.checkedAt, reason: expect.stringContaining("fresh provider-bound"),
+    });
+    expect((await verifyAndEnableCapability(disabled, proof({ grantedScopes: [] }), () => now)).state).toBe("quarantined");
+    expect((await verifyAndEnableCapability(disabled, proof({ authenticated: false }), () => now)).state).toBe("degraded");
+  });
+
+  it("rejects stale, replayed, future, malformed and mismatched re-enable proofs", async () => {
+    const now = Date.parse("2026-10-23T21:50:00.000Z");
+    const disabled = disableCapability(registerCapability(base, healthy));
+    const proof = (overrides: Record<string, unknown> = {}) => async (request: { capabilityId: string; credentialRef: string | null; challenge: string }) =>
+      ({ ...healthy, checkedAt: new Date(now).toISOString(), capabilityId: request.capabilityId, credentialRef: request.credentialRef, challenge: request.challenge, ...overrides });
+
+    for (const override of [
+      { checkedAt: healthy.checkedAt },
+      { checkedAt: new Date(now + 1000).toISOString() },
+      { checkedAt: "not-a-timestamp" },
+      { capabilityId: "different-capability" },
+      { credentialRef: "vault://different/credential" },
+      { challenge: "replayed-challenge" },
+    ]) {
+      expect((await verifyAndEnableCapability(disabled, proof(override), () => now)).state).toBe("quarantined");
+    }
+    const alreadyChecked = disableCapability({ ...registerCapability(base, healthy), checkedAt: new Date(now).toISOString() });
+    expect((await verifyAndEnableCapability(alreadyChecked, proof(), () => now)).state).toBe("quarantined");
+    expect((await verifyAndEnableCapability(disabled, async () => { throw new Error("provider unreachable"); }, () => now)).state).toBe("disabled");
   });
 
   it("discovers only verified loopback or unix runtimes", () => {

@@ -8,6 +8,9 @@ export interface CapabilityRevision { version: number; state: CapabilityState; c
 export interface CapabilityRecord extends CapabilityRevision { id: string; label: string; kind: CapabilityKind; protocol: string; metadata: CapabilityMetadata; priority: number; health: HealthObservation[]; history: CapabilityRevision[]; }
 export interface ConnectionInput { id: string; label: string; kind: CapabilityKind; protocol: string; credentialRef?: string; permissions: PermissionGrant[]; metadata?: Partial<CapabilityMetadata>; priority?: number; }
 export interface ConnectionProbe { authenticated: boolean; schemaCompatible: boolean; grantedScopes: string[]; checkedAt: string; }
+export interface ReenableProbe extends ConnectionProbe { capabilityId: string; credentialRef: string | null; challenge: string; }
+export interface ReenableProbeRequest { capabilityId: string; protocol: string; credentialRef: string | null; permissions: PermissionGrant[]; challenge: string; }
+export type ReenableProbeProvider = (request: ReenableProbeRequest) => Promise<ReenableProbe>;
 export interface LocalRuntimeCandidate { id: string; label: string; endpoint: string; compatibility: string[]; license: string; signatureVerified: boolean; }
 export interface DiscoveryResult { accepted: ConnectionInput[]; rejected: Array<{ id: string; reason: string }>; }
 
@@ -47,10 +50,54 @@ export function recordHealth(record: CapabilityRecord, observation: HealthObserv
   return { ...revise(record, "degraded", `Health check ${observation.state}: ${observation.detail}`), health };
 }
 
-export function verifyAndEnableCapability(record: CapabilityRecord, probe: ConnectionProbe): CapabilityRecord {
+export async function verifyAndEnableCapability(
+  record: CapabilityRecord,
+  probeProvider: ReenableProbeProvider,
+  now: () => number = Date.now,
+): Promise<CapabilityRecord> {
   if (!(["disabled", "degraded", "quarantined"] as CapabilityState[]).includes(record.state)) return record;
-  const verified = registerCapability({ id: record.id, label: record.label, kind: record.kind, protocol: record.protocol, credentialRef: record.credentialRef ?? undefined, permissions: record.permissions, metadata: record.metadata, priority: record.priority }, probe);
-  return revise(record, verified.state, verified.state === "ready" ? "Re-enabled after verified auth, schema and permission probe." : verified.reason ?? "Verification failed.");
+  if (typeof probeProvider !== "function" || (record.credentialRef && !credentialReference.test(record.credentialRef))) {
+    return revise(record, "quarantined", "A valid credential reference and live provider probe are required.");
+  }
+
+  try {
+    const startedAt = now();
+    const challenge = globalThis.crypto.randomUUID();
+    const probe = await probeProvider({
+      capabilityId: record.id,
+      protocol: record.protocol,
+      credentialRef: record.credentialRef,
+      permissions: record.permissions.map((permission) => ({ ...permission })),
+      challenge,
+    });
+    const completedAt = now();
+    const checkedAt = Date.parse(probe.checkedAt);
+    const previousCheck = record.checkedAt ? Date.parse(record.checkedAt) : -Infinity;
+    const bound = probe.capabilityId === record.id
+      && probe.credentialRef === record.credentialRef
+      && probe.challenge === challenge;
+    const fresh = Number.isFinite(startedAt) && Number.isFinite(completedAt)
+      && completedAt >= startedAt && Number.isFinite(checkedAt)
+      && checkedAt >= startedAt && checkedAt <= completedAt
+      && checkedAt > previousCheck;
+    if (!bound || !fresh) {
+      return revise(record, "quarantined", "Stale, replayed, future-dated or unbound provider proof rejected.");
+    }
+
+    const verified = registerCapability({
+      id: record.id, label: record.label, kind: record.kind, protocol: record.protocol,
+      credentialRef: record.credentialRef ?? undefined, permissions: record.permissions,
+      metadata: record.metadata, priority: record.priority,
+    }, probe);
+    return {
+      ...revise(record, verified.state, verified.state === "ready"
+        ? "Re-enabled after fresh provider-bound auth, schema and permission probe."
+        : verified.reason ?? "Verification failed."),
+      checkedAt: probe.checkedAt,
+    };
+  } catch {
+    return revise(record, record.state, "Live provider probe failed; capability was not enabled.");
+  }
 }
 
 export function discoverLocalRuntimes(candidates: LocalRuntimeCandidate[]): DiscoveryResult {
