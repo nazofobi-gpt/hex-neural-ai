@@ -13,12 +13,27 @@ test("preserves provenance and scope isolation", () => {
   assert.equal(fabric.recall("routing", ["project:hex"])[0].chunk.sourceId, "manual");
 });
 
-test("deduplicates immutable source version", () => {
+test("deduplicates only an identical immutable source version", () => {
   const fabric = new MemoryFabric();
   const first = fabric.ingest(source, 24);
-  const second = fabric.ingest({...source, content:"tampered"}, 24);
+  const second = fabric.ingest({...source}, 24);
   assert.deepEqual(second.map(x => x.id), first.map(x => x.id));
 });
+
+for (const [kind, incoming, chunkSize] of [
+  ["content", {...source, content:"tampered"}, 24],
+  ["checksum", {...source, checksum:"sha256:different"}, 24],
+  ["scope", {...source, scope:"global"}, 24],
+  ["chunkSize", {...source}, 12]
+]) {
+  test(`rejects conflicting source version: ${kind} without corrupting stored chunks`, () => {
+    const fabric = new MemoryFabric();
+    const before = fabric.ingest(source, 24);
+    assert.throws(() => fabric.ingest(incoming, chunkSize), /SOURCE_VERSION_CONFLICT/);
+    assert.deepEqual(fabric.ingest(source, 24).map(c => c.id), before.map(c => c.id));
+    assert.ok(fabric.recall("routing", ["project:hex"]).length > 0);
+  });
+}
 
 test("remove and rebuild never resurrect removed source", () => {
   const fabric = new MemoryFabric();

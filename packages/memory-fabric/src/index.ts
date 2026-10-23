@@ -51,7 +51,17 @@ export class MemoryFabric {
     if (!source.sourceId || !source.version || !source.checksum || !source.scope) throw new Error("INVALID_SOURCE_PROVENANCE");
     if (!Number.isSafeInteger(chunkSize) || chunkSize <= 0) throw new Error("INVALID_CHUNK_SIZE");
     const key = sourceKey(source.sourceId, source.version);
-    if (this.sources.has(key)) return this.chunksFor(source.sourceId, source.version);
+    const existing = this.sources.get(key);
+    if (existing) {
+      const previous = existing.source;
+      if (
+        previous.content !== source.content ||
+        previous.checksum !== source.checksum ||
+        previous.scope !== source.scope ||
+        existing.chunkSize !== chunkSize
+      ) throw new Error("SOURCE_VERSION_CONFLICT");
+      return this.chunksFor(source.sourceId, source.version);
+    }
     const text = normalize(source.content);
     if (!text) throw new Error("EMPTY_SOURCE");
     const parts: string[] = [];
