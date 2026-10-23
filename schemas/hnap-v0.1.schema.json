@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hex-neural-ai.dev/schemas/hnap/0.1/graph.schema.json",
+  "title": "Hex Neural Application Protocol Graph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "id", "version", "nodes", "connections", "resourceBudget"],
+  "properties": {
+    "protocolVersion": { "const": "0.1" },
+    "id": { "$ref": "#/$defs/id" },
+    "version": { "type": "string", "minLength": 1 },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/hexCell" }
+    },
+    "connections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/connection" }
+    },
+    "clusters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/cluster" },
+      "default": []
+    },
+    "neuralCircuits": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/neuralCircuit" },
+      "default": []
+    },
+    "resourceBudget": { "$ref": "#/$defs/resourceBudget" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "faceIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "nodeKind": {
+      "type": "string",
+      "pattern": "^(input|output|model|compute|memory|control|tool|interface|evaluator|axon|cluster|vendor\\.[a-zA-Z0-9_.-]+)$"
+    },
+    "semanticChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "direction", "transport", "schema", "optional"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "direction": { "enum": ["input", "output", "bidirectional"] },
+        "transport": { "enum": ["message", "stream", "request_response"] },
+        "schema": { "type": "string", "minLength": 1 },
+        "optional": { "type": "boolean" }
+      }
+    },
+    "face": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "semanticChannels",
+        "projectionPopulation",
+        "inputPolicy",
+        "outputPolicy",
+        "acceptedSchemas",
+        "connectionIds"
+      ],
+      "properties": {
+        "index": { "$ref": "#/$defs/faceIndex" },
+        "semanticChannels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticChannel" }
+        },
+        "projectionPopulation": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "inputPolicy": { "enum": ["allow", "deny", "conditional"] },
+        "outputPolicy": { "enum": ["allow", "deny", "conditional"] },
+        "acceptedSchemas": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "connectionIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["q", "r"],
+      "properties": {
+        "q": { "type": "integer" },
+        "r": { "type": "integer" }
+      }
+    },
+    "hexCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "level",
+        "parentId",
+        "coordinate",
+        "faces",
+        "neuralCircuitRef",
+        "config",
+        "stateRef",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/nodeKind" },
+        "level": { "type": "integer", "minimum": 0 },
+        "parentId": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        },
+        "coordinate": { "$ref": "#/$defs/coordinate" },
+        "faces": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "prefixItems": [
+            { "$ref": "#/$defs/face" },
+            { "$ref": "#/$defs/face" },
+            { "$ref": "#/$defs/face" },
+            { "$ref": "#/$defs/face" },
+            { "$ref": "#/$defs/face" },
+            { "$ref": "#/$defs/face" }
+          ],
+          "items": false
+        },
+        "neuralCircuitRef": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        },
+        "config": { "type": "object" },
+        "stateRef": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "semanticBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceChannelId", "targetChannelId", "transformRef"],
+      "properties": {
+        "sourceChannelId": { "$ref": "#/$defs/id" },
+        "targetChannelId": { "$ref": "#/$defs/id" },
+        "transformRef": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "faceIndex"],
+      "properties": {
+        "nodeId": { "$ref": "#/$defs/id" },
+        "faceIndex": { "$ref": "#/$defs/faceIndex" }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "target",
+        "semanticBindings",
+        "neuralBridgeRef",
+        "enabled",
+        "createdAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "source": { "$ref": "#/$defs/endpoint" },
+        "target": { "$ref": "#/$defs/endpoint" },
+        "semanticBindings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticBinding" }
+        },
+        "neuralBridgeRef": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "neuron": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "membranePotential",
+        "threshold",
+        "decay",
+        "targetFiringRate",
+        "lastSpikeStep",
+        "projectionFaces"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "role": { "enum": ["excitatory", "inhibitory"] },
+        "membranePotential": { "type": "number" },
+        "threshold": { "type": "number" },
+        "decay": { "type": "number", "minimum": 0, "maximum": 1 },
+        "targetFiringRate": {
+          "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+        },
+        "lastSpikeStep": {
+          "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        },
+        "projectionFaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/faceIndex" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "synapse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceNeuronId",
+        "targetNeuronId",
+        "weight",
+        "delaySteps",
+        "sign",
+        "eligibilityTrace",
+        "plasticityMode",
+        "enabled"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "sourceNeuronId": { "$ref": "#/$defs/id" },
+        "targetNeuronId": { "$ref": "#/$defs/id" },
+        "weight": { "type": "number" },
+        "delaySteps": { "type": "integer", "minimum": 0 },
+        "sign": { "enum": ["excitatory", "inhibitory"] },
+        "eligibilityTrace": { "type": "number" },
+        "plasticityMode": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "plasticityConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled", "bounded"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "bounded": { "const": true }
+      }
+    },
+    "homeostasisConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "neuralCircuit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "profile",
+        "neurons",
+        "synapses",
+        "plasticity",
+        "homeostasis",
+        "checkpointRef"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "profile": { "type": "string", "minLength": 1 },
+        "neurons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/neuron" }
+        },
+        "synapses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/synapse" }
+        },
+        "plasticity": { "$ref": "#/$defs/plasticityConfig" },
+        "homeostasis": { "$ref": "#/$defs/homeostasisConfig" },
+        "checkpointRef": {
+          "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }]
+        }
+      }
+    },
+    "macroFace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "exposedChildFaces", "semanticChannels", "projectionPopulation"],
+      "properties": {
+        "index": { "$ref": "#/$defs/faceIndex" },
+        "exposedChildFaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nodeId", "faceIndex"],
+            "properties": {
+              "nodeId": { "$ref": "#/$defs/id" },
+              "faceIndex": { "$ref": "#/$defs/faceIndex" }
+            }
+          }
+        },
+        "semanticChannels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticChannel" }
+        },
+        "projectionPopulation": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "childNodeIds",
+        "childConnectionIds",
+        "macroFaces",
+        "summarizedStateRef"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "childNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "childConnectionIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "macroFaces": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "prefixItems": [
+            { "$ref": "#/$defs/macroFace" },
+            { "$ref": "#/$defs/macroFace" },
+            { "$ref": "#/$defs/macroFace" },
+            { "$ref": "#/$defs/macroFace" },
+            { "$ref": "#/$defs/macroFace" },
+            { "$ref": "#/$defs/macroFace" }
+          ],
+          "items": false
+        },
+        "summarizedStateRef": {
+          "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }]
+        }
+      }
+    },
+    "resourceBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxHops", "maxRuntimeMs", "maxExternalCalls", "maxCostUnits"],
+      "properties": {
+        "maxHops": { "type": "integer", "minimum": 1 },
+        "maxRuntimeMs": { "type": "integer", "minimum": 1 },
+        "maxExternalCalls": { "type": "integer", "minimum": 0 },
+        "maxCostUnits": {
+          "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,208 @@
+{
+  "protocolVersion": "0.1",
+  "id": "example.two-cell-flow",
+  "version": "0.1.0",
+  "nodes": [
+    {
+      "id": "input-1",
+      "kind": "input",
+      "level": 0,
+      "parentId": null,
+      "coordinate": {
+        "q": 0,
+        "r": 0
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [
+            {
+              "id": "out.text",
+              "direction": "output",
+              "transport": "message",
+              "schema": "text/plain",
+              "optional": false
+            }
+          ],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [
+            "text/plain"
+          ],
+          "connectionIds": [
+            "connection-1"
+          ]
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "Input"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    },
+    {
+      "id": "output-1",
+      "kind": "output",
+      "level": 0,
+      "parentId": null,
+      "coordinate": {
+        "q": 1,
+        "r": 0
+      },
+      "faces": [
+        {
+          "index": 0,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 1,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 2,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 3,
+          "semanticChannels": [
+            {
+              "id": "in.text",
+              "direction": "input",
+              "transport": "message",
+              "schema": "text/plain",
+              "optional": false
+            }
+          ],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [
+            "text/plain"
+          ],
+          "connectionIds": [
+            "connection-1"
+          ]
+        },
+        {
+          "index": 4,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        },
+        {
+          "index": 5,
+          "semanticChannels": [],
+          "projectionPopulation": [],
+          "inputPolicy": "allow",
+          "outputPolicy": "allow",
+          "acceptedSchemas": [],
+          "connectionIds": []
+        }
+      ],
+      "neuralCircuitRef": null,
+      "config": {
+        "label": "Output"
+      },
+      "stateRef": null,
+      "createdAt": "2026-09-27T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z"
+    }
+  ],
+  "connections": [
+    {
+      "id": "connection-1",
+      "source": {
+        "nodeId": "input-1",
+        "faceIndex": 0
+      },
+      "target": {
+        "nodeId": "output-1",
+        "faceIndex": 3
+      },
+      "semanticBindings": [
+        {
+          "sourceChannelId": "out.text",
+          "targetChannelId": "in.text",
+          "transformRef": null
+        }
+      ],
+      "neuralBridgeRef": null,
+      "enabled": true,
+      "createdAt": "2026-09-27T00:00:00Z"
+    }
+  ],
+  "clusters": [],
+  "neuralCircuits": [],
+  "resourceBudget": {
+    "maxHops": 16,
+    "maxRuntimeMs": 5000,
+    "maxExternalCalls": 0,
+    "maxCostUnits": null
+  }
+}
