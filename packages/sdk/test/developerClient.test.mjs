@@ -109,6 +109,21 @@ test("DEV-003 valid scoped run and bounded logs preserve typed receipts", async 
   assert.equal(t.calls.length, 2);
 });
 
+test("DEV-003 log response must match the requested run ID", async () => {
+  const t = transport({ runId: "other-run", events: [] });
+  const client = new HexDeveloperClient(t, {
+    credentialRef: "vault://workspace/dev",
+    scopes: ["logs:read"],
+  });
+  await assert.rejects(
+    () => client.readLogs("run-1"),
+    (error) => error instanceof DeveloperClientError
+      && error.code === "INVALID_TRANSPORT_RESPONSE",
+  );
+  assert.equal(t.calls.length, 1);
+  assert.equal(t.calls[0].path, "/v1/runs/run-1/logs");
+});
+
 test("DEV-003 malformed or unbounded responses fail closed", async () => {
   const tooMany = Array.from({ length: 1001 }, () => ({
     at: "2026-10-07T12:00:00Z", level: "INFO", message: "x",

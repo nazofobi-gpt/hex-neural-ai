@@ -194,10 +194,10 @@ function parseDeployment(value: unknown): DeploymentReceipt {
   return { deploymentId: r.deploymentId, state: r.state };
 }
 
-function parseLogs(value: unknown): RunLogs {
+function parseLogs(value: unknown, expectedRunId: string): RunLogs {
   const r = record(value);
   if (!r || typeof r.runId !== "string" || !ID_PATTERN.test(r.runId)
-    || !Array.isArray(r.events) || r.events.length > MAX_LOG_EVENTS) {
+    || r.runId !== expectedRunId || !Array.isArray(r.events) || r.events.length > MAX_LOG_EVENTS) {
     return invalidEnvelope("Run log response is malformed or exceeds the bounded event limit.");
   }
   const events = r.events.map((event) => {
@@ -301,7 +301,7 @@ export class HexDeveloperClient {
       method: "GET",
       path: `/v1/runs/${run}/logs`,
       credentialRef,
-    }));
+    }), run);
   }
 }
 
