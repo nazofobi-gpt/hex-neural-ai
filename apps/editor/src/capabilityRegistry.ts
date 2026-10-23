@@ -117,11 +117,30 @@ export async function verifyAndEnableCapability(
   }
 }
 
+function isLocalRuntimeEndpoint(endpoint: string): boolean {
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
+        && parsed.username === "" && parsed.password === ""
+        && parsed.search === "" && parsed.hash === "";
+    }
+    if (parsed.protocol === "unix:") {
+      return endpoint.startsWith("unix:///") && parsed.host === ""
+        && parsed.pathname.startsWith("/") && !parsed.pathname.startsWith("//")
+        && parsed.pathname.length > 1 && parsed.search === "" && parsed.hash === "";
+    }
+  } catch {
+    // Malformed URLs must not become import candidates.
+  }
+  return false;
+}
+
 export function discoverLocalRuntimes(candidates: LocalRuntimeCandidate[]): DiscoveryResult {
   const accepted: ConnectionInput[] = [];
   const rejected: DiscoveryResult["rejected"] = [];
   for (const candidate of candidates) {
-    const localEndpoint = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|unix:\/\/\/)/i.test(candidate.endpoint);
+    const localEndpoint = isLocalRuntimeEndpoint(candidate.endpoint);
     if (!localEndpoint) { rejected.push({ id: candidate.id, reason: "Remote endpoints cannot be imported by local discovery." }); continue; }
     if (!candidate.signatureVerified) { rejected.push({ id: candidate.id, reason: "Runtime signature is unverified." }); continue; }
     accepted.push({ id: candidate.id, label: candidate.label, kind: "compute", protocol: "local-runtime", permissions: [{ scope: "runtime:execute", access: "write" }], metadata: { compatibility: [...candidate.compatibility], resourceClass: "local", license: candidate.license } });

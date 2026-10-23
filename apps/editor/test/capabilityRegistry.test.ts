@@ -114,4 +114,26 @@ describe("capability registry", () => {
     expect(result.accepted.map(({ id }) => id)).toEqual(["local-a"]);
     expect(result.rejected).toEqual(expect.arrayContaining([expect.objectContaining({ id: "remote" }), expect.objectContaining({ id: "unsigned" })]));
   });
+
+  it("rejects URL authority spoofing and malformed local-runtime endpoints", () => {
+    const cases = [
+      ["safe-loopback", "http://127.0.0.1:11434", true],
+      ["safe-unix", "unix:///tmp/hex.sock", true],
+      ["remote-ip-prefix", "http://127.0.0.1.evil.example", false],
+      ["remote-localhost-prefix", "http://localhost.evil.example", false],
+      ["remote-userinfo", "http://localhost@evil.example", false],
+      ["remote-port-userinfo", "http://127.0.0.1:8080@evil.example", false],
+      ["invalid-port", "http://localhost:99999", false],
+      ["ambiguous-unix-path", "unix:////remote/hex.sock", false],
+      ["query-bearing", "http://localhost?next=https://evil.example", false],
+      ["fragment-bearing", "http://localhost#@evil.example", false],
+    ] as const;
+    const result = discoverLocalRuntimes(cases.map(([id, endpoint]) => ({
+      id, label: id, endpoint, compatibility: ["text"], license: "MIT", signatureVerified: true,
+    })));
+    expect(result.accepted.map(({ id }) => id)).toEqual(["safe-loopback", "safe-unix"]);
+    expect(result.rejected.map(({ id }) => id).sort()).toEqual(
+      cases.filter(([, , safe]) => !safe).map(([id]) => id).sort(),
+    );
+  });
 });
