@@ -134,6 +134,8 @@ test("graph navigator switches Turkish and English without losing selection", as
 
   const turkish = page.getByRole("navigation", { name: "Grafik gezgini" });
   await expect(turkish).toHaveAttribute("lang", "tr");
+  await expect(page.getByRole("region", { name: "Hex düzenleyici" })).toHaveAttribute("lang", "tr");
+  await expect(page.locator(".canvas-host canvas")).toHaveAttribute("aria-label", /Etkileşimli altıgen tuvali/);
   await expect(page.getByRole("region", { name: "Hex düzenleyici" })).toBeVisible();
   const turkishToolbar = page.getByRole("toolbar", { name: "Hex düzenleyici kontrolleri" });
   for (const label of ["Altıgen ekle", "Seçileni sil", "Geri al", "Yinele"]) {
@@ -150,6 +152,8 @@ test("graph navigator switches Turkish and English without losing selection", as
   await turkish.getByRole("combobox", { name: "Gezgin dili" }).selectOption("en");
 
   const restored = page.getByRole("navigation", { name: "Graph navigator" });
+  await expect(page.getByRole("region", { name: "Hex editor" })).toHaveAttribute("lang", "en");
+  await expect(page.locator(".canvas-host canvas")).toHaveAttribute("aria-label", "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.");
   await expect(page.getByRole("toolbar", { name: "Hex editor controls" })
     .getByRole("button", { name: "Add hex" })).toBeVisible();
   await expect(page.locator(".hint")).toContainText("Drag a hex to snap");
