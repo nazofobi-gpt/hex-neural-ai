@@ -504,12 +504,20 @@ export function HexCanvas() {
         </p>
         <div className="navigator-pagination">
           <button type="button" disabled={safeNavigatorPage === 0}
+            onClick={() => setNavigatorPage(0)}>
+            First page
+          </button>
+          <button type="button" disabled={safeNavigatorPage === 0}
             onClick={() => setNavigatorPage((current) => Math.max(0, current - 1))}>
             Previous page
           </button>
           <button type="button" disabled={safeNavigatorPage === navigatorPageCount - 1}
             onClick={() => setNavigatorPage((current) => Math.min(navigatorPageCount - 1, current + 1))}>
             Next page
+          </button>
+          <button type="button" disabled={safeNavigatorPage === navigatorPageCount - 1}
+            onClick={() => setNavigatorPage(navigatorPageCount - 1)}>
+            Last page
           </button>
         </div>
         <ol>
