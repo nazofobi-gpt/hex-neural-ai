@@ -127,6 +127,28 @@ test("2k graph navigator keeps DOM bounded while every node remains reachable", 
   await expect(nodeButtons).toHaveCount(100);
 });
 
+test("graph navigator switches Turkish and English without losing selection", async ({ page }) => {
+  await page.goto("/?benchmark=2107");
+  const english = page.getByRole("navigation", { name: "Graph navigator" });
+  await english.getByRole("combobox", { name: "Navigator language" }).selectOption("tr");
+
+  const turkish = page.getByRole("navigation", { name: "Grafik gezgini" });
+  await expect(turkish).toHaveAttribute("lang", "tr");
+  await expect(turkish.getByRole("status")).toContainText("1–100 / 2107 düğüm gösteriliyor");
+  await turkish.getByRole("button", { name: "Sonraki sayfa" }).click();
+  await expect(turkish.getByRole("status")).toContainText("101–200 / 2107 düğüm gösteriliyor");
+
+  const node = turkish.getByRole("button", { name: /^Hex 101 konum q / });
+  await node.click();
+  await expect(node).toHaveAttribute("aria-current", "true");
+  await turkish.getByRole("combobox", { name: "Gezgin dili" }).selectOption("en");
+
+  const restored = page.getByRole("navigation", { name: "Graph navigator" });
+  await expect(restored.getByRole("button", { name: /^Hex 101 at q / }))
+    .toHaveAttribute("aria-current", "true");
+  await expect(restored.getByRole("status")).toContainText("Showing 101–200 of 2107 nodes");
+});
+
 test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face adjacency", async ({
   page,
 }) => {
