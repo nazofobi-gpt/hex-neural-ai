@@ -301,6 +301,27 @@ test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face
 });
 
 
+test("Windows forced-colors navigator keeps keyboard focus and current node visible", async ({ page }) => {
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto("/");
+
+  const navigator = page.getByRole("navigation", { name: "Graph navigator" });
+  const language = navigator.getByRole("combobox", { name: "Navigator language" });
+  await language.focus();
+  await expect(language).toBeFocused();
+  await expect(language).toHaveCSS("outline-style", "solid");
+  await expect(language).toHaveCSS("outline-width", "2px");
+
+  const first = navigator.getByRole("button", { name: "Hex 1 at q -3, r 0" });
+  await first.focus();
+  await first.press("ArrowRight");
+  const selected = navigator.locator('button[aria-current="true"]');
+  await expect(selected).toBeFocused();
+  await expect(selected).toHaveCSS("outline-style", "solid");
+  await expect(selected).toHaveCSS("outline-width", "2px");
+  expect((await readMetrics(page)).selectedQ).toBe(-2);
+});
+
 test("compact 200%-equivalent viewport keeps keyboard navigator below the canvas", async ({ page }) => {
   // This checks responsive CSS at a reduced effective viewport, not manual browser zoom or AT acceptance.
   await page.setViewportSize({ width: 640, height: 360 });
