@@ -63,6 +63,46 @@ describe("experimental model catalog", () => {
     expect(evaluateExperimentalModelUse(malformed, safeGate).allowed).toBe(false);
   });
 
+  it("rejects overridden lifecycle flags and elevated connection privileges", () => {
+    const variants: ExperimentalModelProfile[] = [
+      { ...FLEDGE_ALPHA_PREVIEW, lifecycle: "ready" } as unknown as ExperimentalModelProfile,
+      { ...FLEDGE_ALPHA_PREVIEW, availability: "available" } as unknown as ExperimentalModelProfile,
+      { ...FLEDGE_ALPHA_PREVIEW, backendIdentity: "trusted" } as unknown as ExperimentalModelProfile,
+      { ...FLEDGE_ALPHA_PREVIEW, productionCriticalAllowed: true } as unknown as ExperimentalModelProfile,
+      { ...FLEDGE_ALPHA_PREVIEW, fallbackRequired: false } as unknown as ExperimentalModelProfile,
+    ];
+    for (const profile of variants) {
+      expect(evaluateExperimentalModelUse(profile, safeGate)).toMatchObject({
+        allowed: false,
+        reason: expect.stringContaining("invariants"),
+      });
+    }
+    const extraScope = {
+      ...FLEDGE_ALPHA_PREVIEW,
+      connection: {
+        ...FLEDGE_ALPHA_PREVIEW.connection,
+        permissions: [
+          ...FLEDGE_ALPHA_PREVIEW.connection.permissions,
+          { scope: "workspace:admin", access: "write" },
+        ],
+      },
+    } as unknown as ExperimentalModelProfile;
+    expect(evaluateExperimentalModelUse(extraScope, safeGate)).toMatchObject({
+      allowed: false,
+      reason: expect.stringContaining("permissions"),
+    });
+    const wrongKind = {
+      ...FLEDGE_ALPHA_PREVIEW,
+      connection: { ...FLEDGE_ALPHA_PREVIEW.connection, kind: "tool" },
+    } as unknown as ExperimentalModelProfile;
+    expect(evaluateExperimentalModelUse(wrongKind, safeGate).allowed).toBe(false);
+    const noPermissions = {
+      ...FLEDGE_ALPHA_PREVIEW,
+      connection: { ...FLEDGE_ALPHA_PREVIEW.connection, permissions: [] },
+    } as ExperimentalModelProfile;
+    expect(evaluateExperimentalModelUse(noPermissions, safeGate).allowed).toBe(false);
+  });
+
   it("fails closed without live probe, current terms, schema compatibility, fallback or for production-critical work", () => {
     expect(evaluateExperimentalModelUse(FLEDGE_ALPHA_PREVIEW, { ...safeGate, liveProbePassed: false }).allowed).toBe(false);
     expect(evaluateExperimentalModelUse(FLEDGE_ALPHA_PREVIEW, { ...safeGate, termsVerified: false }).allowed).toBe(false);

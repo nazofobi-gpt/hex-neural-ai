@@ -67,6 +67,28 @@ export function evaluateExperimentalModelUse(
   if (gate.productionCritical) {
     return { allowed: false, reason: "Experimental models cannot own production-critical execution." };
   }
+  // Caller-provided catalog metadata is not authority to relax experimental safety.
+  if (
+    profile.lifecycle !== "experimental" ||
+    profile.availability !== "live-probe-required" ||
+    profile.backendIdentity !== "opaque" ||
+    profile.productionCriticalAllowed !== false ||
+    profile.fallbackRequired !== true
+  ) {
+    return { allowed: false, reason: "Experimental model safety invariants are malformed or overridden." };
+  }
+  const connection = profile.connection;
+  if (
+    !connection ||
+    connection.kind !== "model" ||
+    connection.protocol !== "openai-compatible" ||
+    !Array.isArray(connection.permissions) ||
+    connection.permissions.length !== 1 ||
+    connection.permissions[0]?.scope !== "model:invoke" ||
+    connection.permissions[0]?.access !== "write"
+  ) {
+    return { allowed: false, reason: "Experimental model connection permissions exceed the allowed invocation scope." };
+  }
   if (!Array.isArray(profile.allowedDataClasses) || !Array.isArray(profile.blockedDataClasses)) {
     return { allowed: false, reason: "Experimental model data-class policy is malformed." };
   }
