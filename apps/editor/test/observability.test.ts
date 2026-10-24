@@ -8,6 +8,7 @@ import {
   projectRuntimeReceipt,
   projectRecordedRuntimeReceipt,
   redactTelemetry,
+  sanitizeLogEntry,
   unknown,
   virtualizeLogWindow,
   type CostLineV1,
@@ -98,6 +99,31 @@ describe("obs.v1 telemetry semantics", () => {
       nested: { authorization: "[REDACTED]", safe: "ok" },
       message: "[REDACTED]",
     });
+  });
+
+  it("redacts API keys, cookies, URL credentials and circular attributes", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const sanitized = redactTelemetry({
+      apiKey: "fixture-key",
+      "set-cookie": "session=fixture-cookie",
+      nested: { access_key: "fixture-access", safe: "ok" },
+      url: "https://example.test/?api_key=fixture-query&mode=read",
+      cycle: cyclic,
+    });
+    expect(sanitized).toEqual({
+      apiKey: "[REDACTED]",
+      "set-cookie": "[REDACTED]",
+      nested: { access_key: "[REDACTED]", safe: "ok" },
+      url: "[REDACTED]",
+      cycle: { self: "[REDACTED]" },
+    });
+    expect(sanitizeLogEntry({
+      id: "log-1",
+      level: "warn",
+      message: "authorization=fixture-header",
+      attributes: { note: "safe" },
+    }).message).toBe("[REDACTED]");
   });
 
   it("bounds large-log rendering windows and sanitizes returned entries", () => {
