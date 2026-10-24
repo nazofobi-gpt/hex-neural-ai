@@ -104,9 +104,10 @@ function chooseBinding(
   );
 }
 
-function validAdapterMetric(value: unknown): boolean {
+function validAdapterMetric(value: unknown, requireSafeInteger = false): boolean {
   return value === undefined ||
-    (typeof value === "number" && Number.isFinite(value) && value >= 0);
+    (typeof value === "number" && Number.isFinite(value) && value >= 0 &&
+      (!requireSafeInteger || Number.isSafeInteger(value)));
 }
 
 function normalizedAdapterResult(
@@ -228,6 +229,9 @@ export function runExecutableGraph(
 
   const queue: RuntimeSignal[] = [initialSignal];
   const trace: RuntimeTraceEvent[] = [];
+  // Provider billing receipt IDs must be unique within a run. A repeated
+  // receipt cannot represent a second independently billed external call.
+  const seenProviderReceipts = new Set<string>();
   const checkpoints: RunCheckpoint[] = [];
   const artifacts: RuntimeArtifactReceipt[] = [];
   const outputs: RuntimeSignal[] = [];
@@ -329,7 +333,7 @@ export function runExecutableGraph(
     }
 
     const invalidMetric = (["durationMs", "externalCalls", "costUnits"] as const)
-      .find((key) => !validAdapterMetric(rawResult[key]));
+      .find((key) => !validAdapterMetric(rawResult[key], key === "externalCalls"));
     if (invalidMetric !== undefined) {
       return finalize(
         options,
@@ -353,7 +357,8 @@ export function runExecutableGraph(
         Number.isFinite(meter.amountUsd) && meter.amountUsd >= 0 &&
         typeof meter.receiptId === "string" && meter.receiptId.trim().length > 0 &&
         typeof meter.source === "string" && meter.source.trim().length > 0 &&
-        typeof rawResult.externalCalls === "number" && rawResult.externalCalls > 0;
+        rawResult.externalCalls === 1 &&
+        !seenProviderReceipts.has(meter.receiptId);
       if (!valid) {
         return finalize(
           options, executable, "ADAPTER_FAILED",
@@ -367,7 +372,8 @@ export function runExecutableGraph(
     const nextRuntimeMs = totals.runtimeMs + result.durationMs;
     const nextExternalCalls = totals.externalCalls + result.externalCalls;
     const nextCostUnits = totals.costUnits + result.costUnits;
-    if (![nextRuntimeMs, nextExternalCalls, nextCostUnits].every(Number.isFinite)) {
+    if (![nextRuntimeMs, nextCostUnits].every(Number.isFinite) ||
+        !Number.isSafeInteger(nextExternalCalls)) {
       return finalize(
         options,
         executable,
@@ -379,6 +385,10 @@ export function runExecutableGraph(
         outputs,
         totals,
       );
+    }
+
+    if (result.providerMeter !== undefined) {
+      seenProviderReceipts.add(result.providerMeter.receiptId);
     }
 
     totals.processedSignals += 1;

@@ -298,6 +298,69 @@ test("runtime rejects fake or unbound provider money measurements", () => {
   }
 });
 
+test("rejects fractional or unsafe external-call counts before recording a trace", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  for (const calls of [0.5, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => ({ externalCalls: calls });
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions("invalid-call-count"),
+      adapters: fixture,
+    });
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+  }
+});
+
+test("rejects one USD receipt for multiple calls and duplicate receipt IDs", () => {
+  const compiled = compileGraph(chainGraph({ maxExternalCalls: 3 }), 42, policy());
+  assert.equal(compiled.ok, true);
+  const meter = { amountUsd: 0.017, receiptId: "bill-1", source: "fixture-provider" };
+  const bundled = adapters();
+  bundled.byNodeId.tool.execute = () => ({ externalCalls: 2, providerMeter: meter });
+  const bundledReceipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("bundled-meter"),
+    adapters: bundled,
+  });
+  assert.equal(bundledReceipt.termination.code, "ADAPTER_FAILED");
+  assert.equal(bundledReceipt.totals.externalCalls, 0);
+
+  const duplicate = adapters();
+  duplicate.byNodeId.transform.execute = () => ({ externalCalls: 1, providerMeter: meter });
+  duplicate.byNodeId.tool.execute = () => ({ externalCalls: 1, providerMeter: meter });
+  const duplicateReceipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("duplicate-meter"),
+    adapters: duplicate,
+  });
+  assert.equal(duplicateReceipt.termination.code, "ADAPTER_FAILED");
+  assert.deepEqual(duplicateReceipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+  assert.equal(duplicateReceipt.totals.externalCalls, 1);
+});
+
+test("distinct metered calls preserve separate provider receipt IDs", () => {
+  const compiled = compileGraph(chainGraph({ maxExternalCalls: 3 }), 42, policy());
+  assert.equal(compiled.ok, true);
+  const fixture = adapters();
+  fixture.byNodeId.transform.execute = () => ({
+    externalCalls: 1,
+    providerMeter: { amountUsd: 0.01, receiptId: "bill-1", source: "fixture-provider" },
+  });
+  fixture.byNodeId.tool.execute = () => ({
+    externalCalls: 1,
+    providerMeter: { amountUsd: 0.02, receiptId: "bill-2", source: "fixture-provider" },
+  });
+  const receipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("distinct-meters"),
+    adapters: fixture,
+  });
+  assert.equal(receipt.status, "completed");
+  assert.equal(receipt.totals.externalCalls, 2);
+  assert.deepEqual(receipt.trace.filter((event) => event.providerMeter)
+    .map((event) => event.providerMeter.receiptId), ["bill-1", "bill-2"]);
+});
+
 test("same graph version, seed and fixtures produce byte-identical replay receipts", () => {
   const compiledA = compileGraph(chainGraph(), 777, policy());
   const compiledB = compileGraph(chainGraph(), 777, policy());
