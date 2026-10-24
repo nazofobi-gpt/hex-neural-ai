@@ -162,6 +162,25 @@ test("graph navigator switches Turkish and English without losing selection", as
   await expect(restored.getByRole("status")).toContainText("Showing 101–200 of 2107 nodes");
 });
 
+test("editor live status follows Turkish and English without losing edits", async ({ page }) => {
+  await page.goto("/");
+  const navigator = page.getByRole("navigation", { name: "Graph navigator" });
+  await navigator.getByRole("combobox", { name: "Navigator language" }).selectOption("tr");
+
+  const status = page.getByRole("toolbar", { name: "Hex düzenleyici kontrolleri" })
+    .getByRole("status");
+  await expect(status).toContainText("Hazır · 37 altıgen");
+  await page.getByRole("button", { name: "Altıgen ekle" }).click();
+  await expect(status).toContainText("Eklendi · 38 altıgen");
+  await page.getByRole("button", { name: "Geri al" }).click();
+  await expect(status).toContainText("Geri alındı · 37 altıgen");
+
+  await page.getByRole("navigation", { name: "Grafik gezgini" })
+    .getByRole("combobox", { name: "Gezgin dili" }).selectOption("en");
+  await expect(page.getByRole("toolbar", { name: "Hex editor controls" })
+    .getByRole("status")).toContainText("Undo · 37 hexes");
+});
+
 test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face adjacency", async ({
   page,
 }) => {
