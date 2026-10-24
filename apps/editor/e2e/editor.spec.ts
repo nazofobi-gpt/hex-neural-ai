@@ -134,6 +134,12 @@ test("graph navigator switches Turkish and English without losing selection", as
 
   const turkish = page.getByRole("navigation", { name: "Grafik gezgini" });
   await expect(turkish).toHaveAttribute("lang", "tr");
+  await expect(page.getByRole("region", { name: "Hex düzenleyici" })).toBeVisible();
+  const turkishToolbar = page.getByRole("toolbar", { name: "Hex düzenleyici kontrolleri" });
+  for (const label of ["Altıgen ekle", "Seçileni sil", "Geri al", "Yinele"]) {
+    await expect(turkishToolbar.getByRole("button", { name: label })).toBeVisible();
+  }
+  await expect(page.locator(".hint")).toContainText("Altıgeni sürükleyerek yerleştirin");
   await expect(turkish.getByRole("status")).toContainText("1–100 / 2107 düğüm gösteriliyor");
   await turkish.getByRole("button", { name: "Sonraki sayfa" }).click();
   await expect(turkish.getByRole("status")).toContainText("101–200 / 2107 düğüm gösteriliyor");
@@ -144,6 +150,9 @@ test("graph navigator switches Turkish and English without losing selection", as
   await turkish.getByRole("combobox", { name: "Gezgin dili" }).selectOption("en");
 
   const restored = page.getByRole("navigation", { name: "Graph navigator" });
+  await expect(page.getByRole("toolbar", { name: "Hex editor controls" })
+    .getByRole("button", { name: "Add hex" })).toBeVisible();
+  await expect(page.locator(".hint")).toContainText("Drag a hex to snap");
   await expect(restored.getByRole("button", { name: /^Hex 101 at q / }))
     .toHaveAttribute("aria-current", "true");
   await expect(restored.getByRole("status")).toContainText("Showing 101–200 of 2107 nodes");
