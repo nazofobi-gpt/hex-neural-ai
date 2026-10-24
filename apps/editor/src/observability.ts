@@ -227,6 +227,8 @@ export interface RuntimeReceiptProjectionV1 {
   terminationCode: string;
   /** Actual runtime trace from a provider adapter, not a synthetic USD conversion. */
   providerTrace?: MeteredRuntimeTraceV1[];
+  /** From the complete RunReceipt.totals.externalCalls, not the filtered trace. */
+  totalExternalCalls?: number;
 }
 
 export interface RuntimeUnitBudgetEvidenceV1 {
@@ -285,8 +287,17 @@ export function projectRuntimeReceipt(
   // Only a fully metered and uniquely referenced set of external calls
   // can expose an adapter-reported provider USD subtotal. Other costs
   // remain UNKNOWN; this does not claim a complete end-to-end invoice.
-  const billable = (receipt.providerTrace ?? []).filter((event) => event.externalCalls > 0);
-  if (billable.length > 0) {
+  const trace = receipt.providerTrace ?? [];
+  const billable = trace.filter((event) => event.externalCalls > 0);
+  const expectedCalls = receipt.totalExternalCalls;
+  // A valid subset is not a complete bill. Without the independent run total,
+  // omitted trace events or a single receipt for multiple calls remain UNKNOWN.
+  const completeCoverage =
+    expectedCalls !== undefined && Number.isSafeInteger(expectedCalls) && expectedCalls > 0 &&
+    trace.every((event) => Number.isSafeInteger(event.externalCalls) &&
+      (event.externalCalls === 0 ? event.providerMeter === undefined : event.externalCalls === 1)) &&
+    billable.length === expectedCalls;
+  if (completeCoverage) {
     const seenReceipts = new Set<string>();
     let usd = 0;
     let metered = true;
