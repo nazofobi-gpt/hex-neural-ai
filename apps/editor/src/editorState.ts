@@ -1,5 +1,6 @@
 import type { AxialCoordinate } from "../../../packages/protocol/src/index.js";
 import { coordinateKey } from "./hexMath";
+import type { VersionSnapshot } from "./versionStore";
 
 export interface EditorHex extends AxialCoordinate {
   id: string;
@@ -28,6 +29,48 @@ export class EditorState {
 
   public get nodes(): readonly EditorHex[] {
     return this.nodesValue;
+  }
+
+  /** Detached graph state for a durable, project-scoped named checkpoint. */
+  public exportVersionSnapshot(): VersionSnapshot {
+    return this.snapshot();
+  }
+
+  /**
+   * Apply a previously validated graph checkpoint to this editor only.
+   * Never replays external tools. A successful restore invalidates transient
+   * undo/redo stacks so an old edit cannot silently overwrite restored data.
+   */
+  public applyVersionSnapshot(snapshot: VersionSnapshot): void {
+    if (!snapshot || !Array.isArray(snapshot.nodes) || snapshot.nodes.length > 5000 ||
+        !Number.isSafeInteger(snapshot.nextSequence) || snapshot.nextSequence < 1) {
+      throw new Error("INVALID_VERSION_SNAPSHOT");
+    }
+    const ids = new Set<string>();
+    const positions = new Set<string>();
+    let largestGeneratedId = 0;
+    const nodes: EditorHex[] = snapshot.nodes.map((node) => {
+      if (!node || typeof node.id !== "string" || !node.id.trim() || node.id.length > 256 ||
+          typeof node.label !== "string" || node.label.length > 512 ||
+          !Number.isSafeInteger(node.q) || !Number.isSafeInteger(node.r)) {
+        throw new Error("INVALID_VERSION_SNAPSHOT");
+      }
+      const position = coordinateKey(node);
+      if (ids.has(node.id) || positions.has(position)) {
+        throw new Error("INVALID_VERSION_SNAPSHOT");
+      }
+      ids.add(node.id);
+      positions.add(position);
+      const match = /^hex-(\d+)$/.exec(node.id);
+      if (match) largestGeneratedId = Math.max(largestGeneratedId, Number(match[1]));
+      return { id: node.id, label: node.label, q: node.q, r: node.r };
+    });
+    if (snapshot.nextSequence <= largestGeneratedId) {
+      throw new Error("INVALID_VERSION_SNAPSHOT");
+    }
+    this.restore({ nodes, nextSequence: snapshot.nextSequence });
+    this.past = [];
+    this.future = [];
   }
 
   public addAt(coordinate: AxialCoordinate): EditorHex | null {
