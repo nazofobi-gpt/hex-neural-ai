@@ -43,7 +43,7 @@ test("toolbar mutations are reflected in the live editor", async ({ page }) => {
   await expect(status).toContainText("37 hexes");
 
   const canvas = page.getByLabel(
-    "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+    "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.",
   );
   await expect(canvas).toBeVisible();
   await canvas.focus();
@@ -54,7 +54,7 @@ test("keyboard navigation selects and moves nodes without drag", async ({ page }
   await page.goto("/");
 
   const canvas = page.getByLabel(
-    "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+    "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.",
   );
   await canvas.focus();
   await canvas.press("ArrowRight");
@@ -153,13 +153,28 @@ test("graph navigator switches Turkish and English without losing selection", as
 
   const restored = page.getByRole("navigation", { name: "Graph navigator" });
   await expect(page.getByRole("region", { name: "Hex editor" })).toHaveAttribute("lang", "en");
-  await expect(page.locator(".canvas-host canvas")).toHaveAttribute("aria-label", "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.");
+  await expect(page.locator(".canvas-host canvas")).toHaveAttribute("aria-label", "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.");
   await expect(page.getByRole("toolbar", { name: "Hex editor controls" })
     .getByRole("button", { name: "Add hex" })).toBeVisible();
   await expect(page.locator(".hint")).toContainText("Drag a hex to snap");
   await expect(restored.getByRole("button", { name: /^Hex 101 at q / }))
     .toHaveAttribute("aria-current", "true");
   await expect(restored.getByRole("status")).toContainText("Showing 101–200 of 2107 nodes");
+});
+
+test("benchmark status formats counts and render timing for English and Turkish", async ({ page }) => {
+  await page.goto("/?benchmark=2107");
+  const englishStatus = page.getByRole("toolbar", { name: "Hex editor controls" })
+    .getByRole("status");
+  await expect(englishStatus).toContainText("2,107 hexes");
+  await expect(englishStatus).toContainText(/rendered [\\d,]+\\/2,107 · [\\d,]+\\.\\dms/);
+
+  await page.getByRole("navigation", { name: "Graph navigator" })
+    .getByRole("combobox", { name: "Navigator language" }).selectOption("tr");
+  const turkishStatus = page.getByRole("toolbar", { name: "Hex düzenleyici kontrolleri" })
+    .getByRole("status");
+  await expect(turkishStatus).toContainText("2.107 altıgen");
+  await expect(turkishStatus).toContainText(/çizilen [\\d.]+\\/2\\.107 · [\\d.]+,\\dms/);
 });
 
 test("editor live status follows Turkish and English without losing edits", async ({ page }) => {
@@ -187,7 +202,7 @@ test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face
   await page.goto("/");
 
   const canvas = page.getByLabel(
-    "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+    "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.",
   );
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
