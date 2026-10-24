@@ -479,19 +479,19 @@ export function HexCanvas() {
   const isTurkish = navigatorLocale === "tr";
 
   return (
-    <section className="editor-panel" aria-label="Hex editor">
-      <div className="toolbar" role="toolbar" aria-label="Hex editor controls">
+    <section className="editor-panel" aria-label={isTurkish ? "Hex düzenleyici" : "Hex editor"}>
+      <div className="toolbar" role="toolbar" aria-label={isTurkish ? "Hex düzenleyici kontrolleri" : "Hex editor controls"}>
         <button type="button" onClick={() => actionsRef.current?.add()}>
-          Add hex
+          {isTurkish ? "Altıgen ekle" : "Add hex"}
         </button>
         <button type="button" onClick={() => actionsRef.current?.remove()}>
-          Delete selected
+          {isTurkish ? "Seçileni sil" : "Delete selected"}
         </button>
         <button type="button" onClick={() => actionsRef.current?.undo()}>
-          Undo
+          {isTurkish ? "Geri al" : "Undo"}
         </button>
         <button type="button" onClick={() => actionsRef.current?.redo()}>
-          Redo
+          {isTurkish ? "Yinele" : "Redo"}
         </button>
         <span className="status" role="status" aria-live="polite">
           {status}
@@ -568,8 +568,9 @@ export function HexCanvas() {
         </ol>
       </nav>
       <footer className="hint">
-        Drag a hex to snap · drag empty space to pan · wheel to zoom · Ctrl/Cmd+Z
-        to undo
+        {isTurkish
+          ? "Altıgeni sürükleyerek yerleştirin · boş alanı sürükleyerek kaydırın · tekerlekle yakınlaştırın · Ctrl/Cmd+Z ile geri alın"
+          : "Drag a hex to snap · drag empty space to pan · wheel to zoom · Ctrl/Cmd+Z to undo"}
       </footer>
     </section>
   );
