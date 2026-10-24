@@ -126,6 +126,31 @@ describe("obs.v1 telemetry semantics", () => {
     }).message).toBe("[REDACTED]");
   });
 
+  it("redacts Basic auth, URL userinfo, signed URLs and PAT-shaped telemetry", () => {
+    const safeUrl = "https://example.test/public?mode=read";
+    expect(redactTelemetry({
+      authHeader: "Basic dXNlcjpwYXNz",
+      endpoint: "https://alice:private-pass@example.test/api",
+      link: "https://cdn.example.test/object?X-Amz-Signature=private-signature&mode=read",
+      message: "github_pat_abcdefghijklmnopqrstuvwxyz0123456789",
+      sessionId: "session-private",
+      safeUrl,
+    })).toEqual({
+      authHeader: "[REDACTED]",
+      endpoint: "[REDACTED]",
+      link: "[REDACTED]",
+      message: "[REDACTED]",
+      sessionId: "[REDACTED]",
+      safeUrl,
+    });
+    expect(sanitizeLogEntry({
+      id: "log-basic",
+      level: "warn",
+      message: "Basic dXNlcjpwYXNz",
+      attributes: { note: "safe" },
+    }).message).toBe("[REDACTED]");
+  });
+
   it("bounds large-log rendering windows and sanitizes returned entries", () => {
     const entries = Array.from({ length: 500 }, (_, index) => ({
       id: `log-${index}`,
