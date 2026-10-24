@@ -1,3 +1,5 @@
+import type { RunReceipt } from "@hex-neural/runtime";
+
 export type SourceHealth = "HEALTHY" | "DEGRADED" | "UNAVAILABLE";
 export type HealthState = "HEALTHY" | "DEGRADED" | "UNHEALTHY" | "UNKNOWN";
 export type CostKind = "provider" | "model" | "tool" | "compute" | "storage" | "egress";
@@ -241,6 +243,39 @@ export interface RuntimeUnitBudgetEvidenceV1 {
 export interface RuntimeObservabilityProjectionV1 {
   snapshot: ObservabilitySnapshotV1;
   runtimeBudget: RuntimeUnitBudgetEvidenceV1;
+}
+
+/**
+ * Canonical adapter from a G-200 runtime-produced receipt to obs.v1.
+ * The external-call denominator is taken from the complete run totals, never
+ * reconstructed from a filtered trace or supplied independently by the UI.
+ * Provider charges still require authenticated billing evidence upstream;
+ * a typed adapter meter alone is not an independently verified invoice.
+ */
+export function projectRecordedRuntimeReceipt(
+  receipt: Readonly<RunReceipt>,
+  maxCostUnits: number | null,
+  correlation: Pick<RuntimeReceiptProjectionV1,
+    "clusterId" | "replicaId" | "generationId" | "messageId"> = {},
+): RuntimeObservabilityProjectionV1 {
+  return projectRuntimeReceipt({
+    ...correlation,
+    runId: receipt.runId,
+    graphId: receipt.graphId,
+    checkpointId: receipt.checkpoints.at(-1)?.id,
+    runtimeMs: receipt.totals.runtimeMs,
+    processedSignals: receipt.totals.processedSignals,
+    costUnits: receipt.totals.costUnits,
+    maxCostUnits,
+    status: receipt.status,
+    terminationCode: receipt.termination.code,
+    totalExternalCalls: receipt.totals.externalCalls,
+    providerTrace: receipt.trace.map((event) => ({
+      traceId: event.traceId,
+      externalCalls: event.externalCalls,
+      ...(event.providerMeter === undefined ? {} : { providerMeter: { ...event.providerMeter } }),
+    })),
+  });
 }
 
 const runtimeCostKinds: CostKind[] = [
