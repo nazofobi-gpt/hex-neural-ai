@@ -75,3 +75,19 @@ test("rejects provenance-free source", () => {
   const fabric = new MemoryFabric();
   assert.throws(() => fabric.ingest({...source, checksum:""}), /INVALID_SOURCE_PROVENANCE/);
 });
+
+test("ingest and recall expose immutable chunks that cannot escalate scope or falsify provenance", () => {
+  const fabric = new MemoryFabric();
+  const [ingested] = fabric.ingest(source, 24);
+  assert.ok(Object.isFrozen(ingested));
+  assert.throws(() => { ingested.scope = "global"; }, TypeError);
+  assert.throws(() => { ingested.checksum = "sha256:spoofed"; }, TypeError);
+
+  const hit = fabric.recall("routing", ["project:hex"])[0];
+  assert.ok(Object.isFrozen(hit.chunk));
+  assert.throws(() => { hit.chunk.text = "forged"; }, TypeError);
+  assert.equal(fabric.recall("routing", ["global"]).length, 0);
+  assert.equal(fabric.recall("routing", ["project:hex"])[0].chunk.checksum, source.checksum);
+  fabric.rebuild();
+  assert.equal(fabric.recall("routing", ["global"]).length, 0);
+});

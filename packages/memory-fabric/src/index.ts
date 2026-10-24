@@ -9,13 +9,13 @@ export interface SourceVersion {
 }
 
 export interface MemoryChunk {
-  id: string;
-  sourceId: string;
-  sourceVersion: string;
-  checksum: string;
-  scope: MemoryScope;
-  text: string;
-  ordinal: number;
+  readonly id: string;
+  readonly sourceId: string;
+  readonly sourceVersion: string;
+  readonly checksum: string;
+  readonly scope: MemoryScope;
+  readonly text: string;
+  readonly ordinal: number;
 }
 
 export interface RecallHit {
@@ -73,10 +73,10 @@ export class MemoryFabric {
       const digest = simpleDigest(part);
       if (seen.has(digest)) continue;
       seen.add(digest);
-      const chunk: MemoryChunk = {
+      const chunk: MemoryChunk = Object.freeze({
         id: chunkId(source, ordinal, part), sourceId: source.sourceId, sourceVersion: source.version,
         checksum: source.checksum, scope: source.scope, text: part, ordinal
-      };
+      });
       this.chunks.set(chunk.id, chunk);
       created.push(chunk);
     }
