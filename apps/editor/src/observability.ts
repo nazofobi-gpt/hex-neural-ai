@@ -217,11 +217,31 @@ export function redactTelemetry(attributes: Record<string, unknown>): Record<str
     : { _telemetry: REDACTED };
 }
 
+// Root log records are also untrusted. Spreading or reading a property
+// directly could execute an adapter-supplied getter before redaction.
+function ownLogData(entry: unknown, key: keyof LogEntryV1): unknown {
+  if (entry === null || typeof entry !== "object") return undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(entry, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined; // Revoked/hostile proxy: fail closed.
+  }
+}
+
 export function sanitizeLogEntry(entry: LogEntryV1): LogEntryV1 {
+  const id = ownLogData(entry, "id");
+  const level = ownLogData(entry, "level");
+  const message = ownLogData(entry, "message");
+  const attributes = ownLogData(entry, "attributes");
   return {
-    ...entry,
-    message: sensitiveString.test(entry.message) ? REDACTED : entry.message,
-    attributes: redactTelemetry(entry.attributes),
+    id: typeof id === "string" && id.length <= 256 && !sensitiveString.test(id)
+      ? id : REDACTED,
+    level: level === "debug" || level === "info" || level === "warn" || level === "error"
+      ? level : "warn",
+    message: typeof message === "string" && message.length <= 8192 && !sensitiveString.test(message)
+      ? message : REDACTED,
+    attributes: redactTelemetry(attributes as Record<string, unknown>),
   };
 }
 
