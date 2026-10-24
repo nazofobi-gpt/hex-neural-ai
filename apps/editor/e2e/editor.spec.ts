@@ -33,7 +33,7 @@ async function readMetrics(page: Page): Promise<EditorMetrics> {
 test("toolbar mutations are reflected in the live editor", async ({ page }) => {
   await page.goto("/");
 
-  const status = page.getByRole("status");
+  const status = page.locator(".toolbar").getByRole("status");
   await expect(status).toContainText("37 hexes");
 
   await page.getByRole("button", { name: "Add hex" }).click();
@@ -106,13 +106,13 @@ test("2k graph navigator keeps DOM bounded while every node remains reachable", 
   await expect(navigator.getByRole("status")).toContainText("Showing 1–100 of 2107 nodes");
   await expect(previous).toBeDisabled();
 
-  for (let pageIndex = 1; pageIndex < 22; pageIndex += 1) {
-    await next.click();
-    await expect(navigator.getByRole("status")).toContainText(`page ${pageIndex + 1} of 22`);
-    await expect(nodeButtons).toHaveCount(pageIndex === 21 ? 7 : 100);
-  }
+  await next.click();
+  await expect(navigator.getByRole("status")).toContainText("Showing 101–200 of 2107 nodes");
+  await expect(nodeButtons).toHaveCount(100);
+  await navigator.getByRole("button", { name: "Last page" }).click();
 
   await expect(navigator.getByRole("status")).toContainText("Showing 2101–2107 of 2107 nodes");
+  await expect(nodeButtons).toHaveCount(7);
   await expect(next).toBeDisabled();
   const lastNode = nodeButtons.last();
   await lastNode.click();
@@ -121,6 +121,10 @@ test("2k graph navigator keeps DOM bounded while every node remains reachable", 
   const metrics = await readMetrics(page);
   expect(metrics.totalNodes).toBe(2107);
   expect(metrics.selectedId).toBe("hex-2107");
+
+  await navigator.getByRole("button", { name: "First page" }).click();
+  await expect(navigator.getByRole("status")).toContainText("Showing 1–100 of 2107 nodes");
+  await expect(nodeButtons).toHaveCount(100);
 });
 
 test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face adjacency", async ({
