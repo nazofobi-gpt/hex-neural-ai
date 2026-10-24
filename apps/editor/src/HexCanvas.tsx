@@ -56,6 +56,12 @@ const TURKISH_STATUS: Record<string, string> = {
 
 function formatEditorStatus(status: EditorStatus, locale: "en" | "tr"): string {
   const turkish = locale === "tr";
+  const languageTag = turkish ? "tr-TR" : "en-US";
+  const numberFormatter = new Intl.NumberFormat(languageTag);
+  const timingFormatter = new Intl.NumberFormat(languageTag, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
   const action = status.action.startsWith("Zoom ")
     ? (turkish ? `Yakınlaştırma ${status.action.slice(5)}` : status.action)
     : (turkish ? TURKISH_STATUS[status.action] ?? status.action : status.action);
@@ -63,9 +69,9 @@ function formatEditorStatus(status: EditorStatus, locale: "en" | "tr"): string {
     ? ` · ${status.selected.label} [q=${status.selected.q}, r=${status.selected.r}]`
     : "";
   const benchmark = status.benchmark
-    ? ` · ${turkish ? "çizilen" : "rendered"} ${status.benchmark.rendered}/${status.benchmark.total} · ${status.benchmark.renderMs.toFixed(1)}ms · ${Math.round(status.benchmark.scale * 100)}%`
+    ? ` · ${turkish ? "çizilen" : "rendered"} ${numberFormatter.format(status.benchmark.rendered)}/${numberFormatter.format(status.benchmark.total)} · ${timingFormatter.format(status.benchmark.renderMs)}ms · ${Math.round(status.benchmark.scale * 100)}%`
     : "";
-  return `${action} · ${status.hexCount} ${turkish ? "altıgen" : "hexes"}${selected}${benchmark}`;
+  return `${action} · ${numberFormatter.format(status.hexCount)} ${turkish ? "altıgen" : "hexes"}${selected}${benchmark}`;
 }
 
 interface CanvasActions {
@@ -132,7 +138,7 @@ export function HexCanvas() {
     canvas.tabIndex = 0;
     canvas.setAttribute(
       "aria-label",
-      "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+      "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.",
     );
     host.appendChild(canvas);
 
@@ -519,7 +525,7 @@ export function HexCanvas() {
       "aria-label",
       navigatorLocale === "tr"
         ? "Etkileşimli altıgen tuvali. Altıgenleri sürükleyin, boş tuvali sürükleyerek kaydırın ve fare tekerleğiyle yakınlaştırın. Düğüm seçmek için ok tuşlarını, taşımak için Shift+ok tuşlarını kullanın."
-        : "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+        : "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.",
     );
   }, [navigatorLocale]);
 
