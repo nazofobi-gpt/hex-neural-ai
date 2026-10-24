@@ -300,6 +300,34 @@ test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face
   expect(afterZoom.scale).toBeGreaterThan(scaleBeforeWheel);
 });
 
+
+test("compact 200%-equivalent viewport keeps keyboard navigator below the canvas", async ({ page }) => {
+  // This checks responsive CSS at a reduced effective viewport, not manual browser zoom or AT acceptance.
+  await page.setViewportSize({ width: 640, height: 360 });
+  await page.goto("/");
+
+  const canvasHost = page.locator(".canvas-host");
+  const navigator = page.getByRole("navigation", { name: "Graph navigator" });
+  await expect(navigator).toBeVisible();
+  expect(await navigator.evaluate((element) => getComputedStyle(element).position)).toBe("relative");
+
+  const canvasBox = await canvasHost.boundingBox();
+  const navigatorBox = await navigator.boundingBox();
+  expect(canvasBox).not.toBeNull();
+  expect(navigatorBox).not.toBeNull();
+  expect(navigatorBox!.y).toBeGreaterThanOrEqual(canvasBox!.y + canvasBox!.height - 1);
+
+  const first = navigator.getByRole("button", { name: "Hex 1 at q -3, r 0" });
+  await first.click();
+  await expect(first).toBeFocused();
+  await first.press("ArrowRight");
+  const selected = navigator.locator('button[aria-current="true"]');
+  await expect(selected).toBeFocused();
+  expect((await readMetrics(page)).selectedQ).toBe(-2);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
+
 test("2k benchmark renders at least 2,000 visible hexes and captures evidence", async ({
   page,
 }, testInfo) => {

@@ -190,6 +190,51 @@ button:focus-visible {
   font-size: 12px;
 }
 
+
+/* At a 200%-equivalent compact viewport, keep the non-visual navigator
+   in document flow rather than trapping it inside a clipped canvas overlay. */
+@media (max-width: 760px) and (max-height: 600px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    grid-template-rows: auto auto;
+  }
+
+  .editor-panel {
+    grid-template-rows: auto minmax(240px, 45vh) auto auto;
+  }
+
+  .canvas-host {
+    min-height: 240px;
+  }
+
+  .graph-navigator {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    width: auto;
+    max-height: min(45vh, 360px);
+    margin: 12px;
+    grid-row: 3;
+  }
+
+  .hint {
+    grid-row: 4;
+  }
+}
+
 @media (max-width: 760px) {
   .topbar {
     align-items: flex-start;
