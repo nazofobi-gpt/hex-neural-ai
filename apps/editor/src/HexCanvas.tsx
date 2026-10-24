@@ -28,6 +28,7 @@ import {
 const HEX_SIZE = 42;
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 2.5;
+const NAVIGATOR_PAGE_SIZE = 100;
 
 interface CanvasActions {
   add: () => void;
@@ -73,6 +74,7 @@ export function HexCanvas() {
   const [status, setStatus] = useState("Ready · 37 hexes");
   const [navigatorNodes, setNavigatorNodes] = useState<EditorHex[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [navigatorPage, setNavigatorPage] = useState(0);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -269,6 +271,12 @@ export function HexCanvas() {
       window.__HEX_EDITOR_METRICS__ = lastMetrics;
       setNavigatorNodes(editor.nodes.map((node) => ({ ...node })));
       setSelectedNodeId(selectedId);
+      if (selectedId) {
+        const selectedIndex = editor.nodes.findIndex((node) => node.id === selectedId);
+        if (selectedIndex >= 0) {
+          setNavigatorPage(Math.floor(selectedIndex / NAVIGATOR_PAGE_SIZE));
+        }
+      }
 
       if (benchmarkMode) {
         updateStatus("Benchmark");
@@ -462,6 +470,12 @@ export function HexCanvas() {
     };
   }, []);
 
+  const navigatorPageCount = Math.max(1, Math.ceil(navigatorNodes.length / NAVIGATOR_PAGE_SIZE));
+  const safeNavigatorPage = Math.min(navigatorPage, navigatorPageCount - 1);
+  const navigatorStart = safeNavigatorPage * NAVIGATOR_PAGE_SIZE;
+  const navigatorEnd = Math.min(navigatorStart + NAVIGATOR_PAGE_SIZE, navigatorNodes.length);
+  const visibleNavigatorNodes = navigatorNodes.slice(navigatorStart, navigatorEnd);
+
   return (
     <section className="editor-panel" aria-label="Hex editor">
       <div className="toolbar" role="toolbar" aria-label="Hex editor controls">
@@ -485,8 +499,21 @@ export function HexCanvas() {
       <nav ref={navigatorRef} className="graph-navigator" aria-label="Graph navigator">
         <h2>Graph navigator</h2>
         <p>Choose a node without dragging. Use arrow keys to move selection; hold Shift to move the selected node.</p>
+        <p role="status" aria-live="polite">
+          Showing {navigatorNodes.length ? navigatorStart + 1 : 0}–{navigatorEnd} of {navigatorNodes.length} nodes (page {safeNavigatorPage + 1} of {navigatorPageCount}).
+        </p>
+        <div className="navigator-pagination">
+          <button type="button" disabled={safeNavigatorPage === 0}
+            onClick={() => setNavigatorPage((current) => Math.max(0, current - 1))}>
+            Previous page
+          </button>
+          <button type="button" disabled={safeNavigatorPage === navigatorPageCount - 1}
+            onClick={() => setNavigatorPage((current) => Math.min(navigatorPageCount - 1, current + 1))}>
+            Next page
+          </button>
+        </div>
         <ol>
-          {navigatorNodes.map((node) => (
+          {visibleNavigatorNodes.map((node) => (
             <li key={node.id}>
               <button
                 type="button"
