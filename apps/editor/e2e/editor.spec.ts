@@ -167,14 +167,14 @@ test("benchmark status formats counts and render timing for English and Turkish"
   const englishStatus = page.getByRole("toolbar", { name: "Hex editor controls" })
     .getByRole("status");
   await expect(englishStatus).toContainText("2,107 hexes");
-  await expect(englishStatus).toContainText(/rendered [\\d,]+\\/2,107 · [\\d,]+\\.\\dms/);
+  await expect(englishStatus).toContainText(/rendered [\d,]+\/2,107 · [\d,]+\.\dms/);
 
   await page.getByRole("navigation", { name: "Graph navigator" })
     .getByRole("combobox", { name: "Navigator language" }).selectOption("tr");
   const turkishStatus = page.getByRole("toolbar", { name: "Hex düzenleyici kontrolleri" })
     .getByRole("status");
   await expect(turkishStatus).toContainText("2.107 altıgen");
-  await expect(turkishStatus).toContainText(/çizilen [\\d.]+\\/2\\.107 · [\\d.]+,\\dms/);
+  await expect(turkishStatus).toContainText(/çizilen [\d.]+\/2\.107 · [\d.]+,\dms/);
 });
 
 test("editor live status follows Turkish and English without losing edits", async ({ page }) => {
