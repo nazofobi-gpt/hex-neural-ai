@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MemoryFabric } from "../dist/index.js";
+import { MemoryFabric, simpleDigest } from "../dist/index.js";
 
 const source = {sourceId:"manual",version:"v1",checksum:"sha256:abc",scope:"project:hex",content:"Alpha routing provenance. Beta memory removal."};
 
@@ -90,4 +90,20 @@ test("ingest and recall expose immutable chunks that cannot escalate scope or fa
   assert.equal(fabric.recall("routing", ["project:hex"])[0].chunk.checksum, source.checksum);
   fabric.rebuild();
   assert.equal(fabric.recall("routing", ["global"]).length, 0);
+});
+
+
+test("distinct chunks with colliding FNV digests survive ingest and rebuild", () => {
+  const first = "83533bed00004ca5";
+  const second = "babb7eac0000f51e";
+  assert.notEqual(first, second);
+  assert.equal(simpleDigest(first), "a8eab9b3");
+  assert.equal(simpleDigest(second), "a8eab9b3");
+  const collisionSource = {...source, sourceId:"collision-proof", content:first + second};
+  const fabric = new MemoryFabric();
+  const chunks = fabric.ingest(collisionSource, 16);
+  assert.equal(chunks.length, 2);
+  assert.deepEqual(chunks.map(c => c.text), [first, second]);
+  fabric.rebuild();
+  assert.deepEqual(fabric.ingest(collisionSource, 16).map(c => c.text), [first, second]);
 });
