@@ -471,6 +471,15 @@ export function HexCanvas() {
     };
   }, []);
 
+  useEffect(() => {
+    hostRef.current?.querySelector("canvas")?.setAttribute(
+      "aria-label",
+      navigatorLocale === "tr"
+        ? "Etkileşimli altıgen tuvali. Altıgenleri sürükleyin, boş tuvali sürükleyerek kaydırın ve fare tekerleğiyle yakınlaştırın. Düğüm seçmek için ok tuşlarını, taşımak için Shift+ok tuşlarını kullanın."
+        : "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+    );
+  }, [navigatorLocale]);
+
   const navigatorPageCount = Math.max(1, Math.ceil(navigatorNodes.length / NAVIGATOR_PAGE_SIZE));
   const safeNavigatorPage = Math.min(navigatorPage, navigatorPageCount - 1);
   const navigatorStart = safeNavigatorPage * NAVIGATOR_PAGE_SIZE;
@@ -479,7 +488,7 @@ export function HexCanvas() {
   const isTurkish = navigatorLocale === "tr";
 
   return (
-    <section className="editor-panel" aria-label={isTurkish ? "Hex düzenleyici" : "Hex editor"}>
+    <section className="editor-panel" lang={navigatorLocale} aria-label={isTurkish ? "Hex düzenleyici" : "Hex editor"}>
       <div className="toolbar" role="toolbar" aria-label={isTurkish ? "Hex düzenleyici kontrolleri" : "Hex editor controls"}>
         <button type="button" onClick={() => actionsRef.current?.add()}>
           {isTurkish ? "Altıgen ekle" : "Add hex"}
