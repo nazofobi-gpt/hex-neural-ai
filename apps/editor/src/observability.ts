@@ -168,8 +168,8 @@ export function deriveHealth(metrics: RunMetricsV1): HealthState {
 }
 
 const REDACTED = "[REDACTED]";
-const forbiddenKey = /(authorization|token|secret|password|credential|payload|prompt|requestbody|responsebody|rawbody|api[_-]?key|access[_-]?key|private[_-]?key|cookie)/i;
-const sensitiveString = /(bearer\s+[a-z0-9._~+\/-]+=*|sk-[a-z0-9_-]{8,}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|session[_-]?token)\s*[:=]\s*[^\s&]+)/i;
+const forbiddenKey = /(authorization|token|secret|password|credential|payload|prompt|requestbody|responsebody|rawbody|api[_-]?key|access[_-]?key|private[_-]?key|cookie|session[_-]?id|signature|signed[_-]?url)/i;
+const sensitiveString = /((?:bearer|basic)\s+[a-z0-9._~+\/-]+=*|sk-[a-z0-9_-]{8,}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|session[_-]?token)\s*[:=]\s*[^\s&]+|https?:\/\/[^\/\s@]+:[^\/\s@]+@|[?&#](?:token|key|sig|signature|secret|session[_-]?id|x-amz-(?:signature|credential|security-token)|x-goog-(?:signature|credential))\s*=\s*[^&#\s]+|(?:gh[pousr]_[a-z0-9_]{16,}|github_pat_[a-z0-9_]{16,}))/i;
 
 function redactValue(value: unknown, visited: WeakSet<object>): unknown {
   if (typeof value === "string") return sensitiveString.test(value) ? REDACTED : value;
