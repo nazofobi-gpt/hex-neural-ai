@@ -30,6 +30,44 @@ const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 2.5;
 const NAVIGATOR_PAGE_SIZE = 100;
 
+interface EditorStatus {
+  action: string;
+  hexCount: number;
+  selected?: Pick<EditorHex, "label" | "q" | "r">;
+  benchmark?: { rendered: number; total: number; renderMs: number; scale: number };
+}
+
+const TURKISH_STATUS: Record<string, string> = {
+  Ready: "Hazır",
+  Benchmark: "Karşılaştırma",
+  Selected: "Seçildi",
+  Panning: "Kaydırılıyor",
+  Snapped: "Hizalandı",
+  "Keyboard selected": "Klavye ile seçildi",
+  "Keyboard moved": "Klavye ile taşındı",
+  "Move blocked": "Taşıma engellendi",
+  "No adjacent node": "Komşu düğüm yok",
+  Undo: "Geri alındı",
+  Redo: "Yinelendi",
+  Deleted: "Silindi",
+  Added: "Eklendi",
+  "Navigator selected": "Gezginden seçildi",
+};
+
+function formatEditorStatus(status: EditorStatus, locale: "en" | "tr"): string {
+  const turkish = locale === "tr";
+  const action = status.action.startsWith("Zoom ")
+    ? (turkish ? `Yakınlaştırma ${status.action.slice(5)}` : status.action)
+    : (turkish ? TURKISH_STATUS[status.action] ?? status.action : status.action);
+  const selected = status.selected
+    ? ` · ${status.selected.label} [q=${status.selected.q}, r=${status.selected.r}]`
+    : "";
+  const benchmark = status.benchmark
+    ? ` · ${turkish ? "çizilen" : "rendered"} ${status.benchmark.rendered}/${status.benchmark.total} · ${status.benchmark.renderMs.toFixed(1)}ms · ${Math.round(status.benchmark.scale * 100)}%`
+    : "";
+  return `${action} · ${status.hexCount} ${turkish ? "altıgen" : "hexes"}${selected}${benchmark}`;
+}
+
 interface CanvasActions {
   add: () => void;
   remove: () => void;
@@ -71,7 +109,7 @@ export function HexCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<CanvasActions | null>(null);
   const navigatorRef = useRef<HTMLElement>(null);
-  const [status, setStatus] = useState("Ready · 37 hexes");
+  const [status, setStatus] = useState<EditorStatus>({ action: "Ready", hexCount: 37 });
   const [navigatorNodes, setNavigatorNodes] = useState<EditorHex[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [navigatorPage, setNavigatorPage] = useState(0);
@@ -147,16 +185,21 @@ export function HexCanvas() {
 
     function updateStatus(prefix = "Ready"): void {
       const selected = selectedId ? nodeAt(selectedId) : undefined;
-      const selectedSuffix = selected
-        ? ` · ${selected.label} [q=${selected.q}, r=${selected.r}]`
-        : "";
-      const benchmarkSuffix = benchmarkMode
-        ? ` · rendered ${lastMetrics.renderedNodes}/${lastMetrics.totalNodes} · ${lastMetrics.renderMs.toFixed(1)}ms · ${Math.round(lastMetrics.scale * 100)}%`
-        : "";
-
-      setStatus(
-        `${prefix} · ${editor.nodes.length} hexes${selectedSuffix}${benchmarkSuffix}`,
-      );
+      setStatus({
+        action: prefix,
+        hexCount: editor.nodes.length,
+        selected: selected
+          ? { label: selected.label, q: selected.q, r: selected.r }
+          : undefined,
+        benchmark: benchmarkMode
+          ? {
+              rendered: lastMetrics.renderedNodes,
+              total: lastMetrics.totalNodes,
+              renderMs: lastMetrics.renderMs,
+              scale: lastMetrics.scale,
+            }
+          : undefined,
+      });
     }
 
     function drawConnectionPreview(node: EditorHex): number {
@@ -503,7 +546,7 @@ export function HexCanvas() {
           {isTurkish ? "Yinele" : "Redo"}
         </button>
         <span className="status" role="status" aria-live="polite">
-          {status}
+          {formatEditorStatus(status, navigatorLocale)}
         </span>
       </div>
       <div ref={hostRef} className="canvas-host" />
