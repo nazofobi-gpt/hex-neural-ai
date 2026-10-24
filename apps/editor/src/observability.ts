@@ -168,23 +168,28 @@ export function deriveHealth(metrics: RunMetricsV1): HealthState {
 }
 
 const REDACTED = "[REDACTED]";
-const forbiddenKey = /(authorization|token|secret|password|credential|payload|prompt|requestbody|responsebody|rawbody)/i;
-const sensitiveString = /(bearer\s+[a-z0-9._~+\/-]+=*|sk-[a-z0-9_-]{8,})/i;
+const forbiddenKey = /(authorization|token|secret|password|credential|payload|prompt|requestbody|responsebody|rawbody|api[_-]?key|access[_-]?key|private[_-]?key|cookie)/i;
+const sensitiveString = /(bearer\s+[a-z0-9._~+\/-]+=*|sk-[a-z0-9_-]{8,}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|session[_-]?token)\s*[:=]\s*[^\s&]+)/i;
 
-function redactValue(value: unknown): unknown {
+function redactValue(value: unknown, visited: WeakSet<object>): unknown {
   if (typeof value === "string") return sensitiveString.test(value) ? REDACTED : value;
-  if (Array.isArray(value)) return value.map(redactValue);
-  if (value && typeof value === "object") return redactTelemetry(value as Record<string, unknown>);
+  if (value && typeof value === "object") {
+    // Circular and aliased telemetry must never recurse forever or leak raw data.
+    if (visited.has(value)) return REDACTED;
+    visited.add(value);
+    if (Array.isArray(value)) return value.map((item) => redactValue(item, visited));
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        forbiddenKey.test(key) ? REDACTED : redactValue(entry, visited),
+      ]),
+    );
+  }
   return value;
 }
 
 export function redactTelemetry(attributes: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(attributes).map(([key, value]) => [
-      key,
-      forbiddenKey.test(key) ? REDACTED : redactValue(value),
-    ]),
-  );
+  return redactValue(attributes, new WeakSet<object>()) as Record<string, unknown>;
 }
 
 export function sanitizeLogEntry(entry: LogEntryV1): LogEntryV1 {
