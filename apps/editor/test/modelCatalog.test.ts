@@ -51,7 +51,7 @@ describe("experimental model catalog", () => {
     for (const dataClass of ["internal", "secret"] as const) {
       expect(evaluateExperimentalModelUse(tampered, { ...safeGate, dataClass })).toMatchObject({
         allowed: false,
-        reason: expect.stringContaining("blocked"),
+        reason: expect.stringContaining("invariants"),
       });
     }
     expect(evaluateExperimentalModelUse(tampered, { ...safeGate, productionCritical: true }).allowed).toBe(false);
