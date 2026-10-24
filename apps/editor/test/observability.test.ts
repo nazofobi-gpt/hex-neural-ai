@@ -151,6 +151,49 @@ describe("obs.v1 telemetry semantics", () => {
     }).message).toBe("[REDACTED]");
   });
 
+  it("never invokes telemetry getters or propagates exotic objects and proxy errors", () => {
+    let getterCalls = 0;
+    const accessor = Object.defineProperty({ safe: "ok" }, "innocent", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return "Bearer should-never-be-read";
+      },
+    });
+    const hostile = new Proxy({}, {
+      ownKeys() { throw new Error("untrusted proxy trap"); },
+    });
+    expect(redactTelemetry({
+      nested: accessor,
+      date: new Date("2026-01-01T00:00:00Z"),
+      hostile,
+    })).toEqual({
+      nested: { safe: "ok", innocent: "[REDACTED]" },
+      date: "[REDACTED]",
+      hostile: "[REDACTED]",
+    });
+    expect(getterCalls).toBe(0);
+  });
+
+  it("bounds deeply nested and oversized telemetry before serializing logs", () => {
+    let deep: Record<string, unknown> = { leaf: "safe" };
+    for (let index = 0; index < 80; index += 1) deep = { nested: deep };
+    const sanitized = redactTelemetry({
+      deep,
+      hugeArray: Array.from({ length: 257 }, () => "safe"),
+      hugeObject: Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`k${index}`, "safe"])),
+    });
+    expect(sanitized.hugeArray).toBe("[REDACTED]");
+    expect(sanitized.hugeObject).toBe("[REDACTED]");
+    expect(JSON.stringify(sanitized)).toContain("[REDACTED]");
+    expect(sanitizeLogEntry({
+      id: "deep-1",
+      level: "info",
+      message: "safe",
+      attributes: { deep },
+    }).attributes.deep).toEqual(sanitized.deep);
+  });
+
   it("bounds large-log rendering windows and sanitizes returned entries", () => {
     const entries = Array.from({ length: 500 }, (_, index) => ({
       id: `log-${index}`,
