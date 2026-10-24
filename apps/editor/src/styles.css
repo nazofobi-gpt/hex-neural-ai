@@ -260,6 +260,7 @@ button:focus-visible {
 }
 
 button:focus-visible,
+.graph-navigator select:focus-visible,
 .canvas-host canvas:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -268,4 +269,22 @@ button:focus-visible,
 button:disabled {
   cursor: not-allowed;
   opacity: .55;
+}
+
+
+/* Windows forced-colors mode suppresses shadow-only focus rings.
+   Use system colors for a visible current-node marker and keyboard focus. */
+@media (forced-colors: active) {
+  .graph-navigator button[aria-current="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  button:focus-visible,
+  .graph-navigator select:focus-visible,
+  .canvas-host canvas:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
 }
