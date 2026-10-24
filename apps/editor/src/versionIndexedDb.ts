@@ -17,6 +17,8 @@ import {
 } from "./versionStore";
 
 const STORE = "graphHistories";
+/** Maximum encoded bytes for one browser-local project history. */
+export const MAX_INDEXEDDB_HISTORY_BYTES = 4 * 1024 * 1024;
 
 function fail(code: string): never {
   throw new Error(code);
@@ -24,6 +26,15 @@ function fail(code: string): never {
 
 function valid(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= 256;
+}
+
+/** Refuse oversized committed or candidate histories before parsing or writing. */
+function enforceHistoryLimit(raw: string | null): void {
+  if (raw === null) return;
+  if (raw.length > MAX_INDEXEDDB_HISTORY_BYTES ||
+      new TextEncoder().encode(raw).byteLength > MAX_INDEXEDDB_HISTORY_BYTES) {
+    fail("INDEXEDDB_HISTORY_TOO_LARGE");
+  }
 }
 
 function openDatabase(name: string): Promise<IDBDatabase> {
@@ -77,6 +88,7 @@ export async function readIndexedDbHistory(
           if (request.result !== undefined && typeof request.result !== "string") {
             fail("CORRUPT_HISTORY");
           }
+          enforceHistoryLimit(request.result ?? null);
           result = new VersionStore(
             storageFor(request.result ?? null).storage, projectId,
           ).load();
@@ -126,9 +138,11 @@ export async function checkpointIndexedDb(
           if (previous !== undefined && typeof previous !== "string") {
             fail("CORRUPT_HISTORY");
           }
+          enforceHistoryLimit(previous ?? null);
           const memory = storageFor(previous ?? null);
           record = new VersionStore(memory.storage, projectId).checkpoint(input);
           const next = memory.serialized();
+          enforceHistoryLimit(next);
           if (next !== (previous ?? null)) objectStore.put(next, projectId);
         } catch (error) {
           knownError = error as Error;
