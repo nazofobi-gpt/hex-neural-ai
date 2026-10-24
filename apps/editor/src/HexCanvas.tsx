@@ -28,12 +28,59 @@ import {
 const HEX_SIZE = 42;
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 2.5;
+const NAVIGATOR_PAGE_SIZE = 100;
+
+interface EditorStatus {
+  action: string;
+  hexCount: number;
+  selected?: Pick<EditorHex, "label" | "q" | "r">;
+  benchmark?: { rendered: number; total: number; renderMs: number; scale: number };
+}
+
+const TURKISH_STATUS: Record<string, string> = {
+  Ready: "Hazır",
+  Benchmark: "Karşılaştırma",
+  Selected: "Seçildi",
+  Panning: "Kaydırılıyor",
+  Snapped: "Hizalandı",
+  "Keyboard selected": "Klavye ile seçildi",
+  "Keyboard moved": "Klavye ile taşındı",
+  "Move blocked": "Taşıma engellendi",
+  "No adjacent node": "Komşu düğüm yok",
+  Undo: "Geri alındı",
+  Redo: "Yinelendi",
+  Deleted: "Silindi",
+  Added: "Eklendi",
+  "Navigator selected": "Gezginden seçildi",
+};
+
+function formatEditorStatus(status: EditorStatus, locale: "en" | "tr"): string {
+  const turkish = locale === "tr";
+  const languageTag = turkish ? "tr-TR" : "en-US";
+  const numberFormatter = new Intl.NumberFormat(languageTag);
+  const timingFormatter = new Intl.NumberFormat(languageTag, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  const action = status.action.startsWith("Zoom ")
+    ? (turkish ? `Yakınlaştırma ${status.action.slice(5)}` : status.action)
+    : (turkish ? TURKISH_STATUS[status.action] ?? status.action : status.action);
+  const selected = status.selected
+    ? ` · ${status.selected.label} [q=${status.selected.q}, r=${status.selected.r}]`
+    : "";
+  const benchmark = status.benchmark
+    ? ` · ${turkish ? "çizilen" : "rendered"} ${numberFormatter.format(status.benchmark.rendered)}/${numberFormatter.format(status.benchmark.total)} · ${timingFormatter.format(status.benchmark.renderMs)}ms · ${Math.round(status.benchmark.scale * 100)}%`
+    : "";
+  return `${action} · ${numberFormatter.format(status.hexCount)} ${turkish ? "altıgen" : "hexes"}${selected}${benchmark}`;
+}
 
 interface CanvasActions {
   add: () => void;
   remove: () => void;
   undo: () => void;
   redo: () => void;
+  select: (id: string) => void;
+  handleKey: (event: KeyboardEvent) => void;
 }
 
 interface EditorMetrics {
@@ -67,7 +114,12 @@ function benchmarkRadius(): number | null {
 export function HexCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<CanvasActions | null>(null);
-  const [status, setStatus] = useState("Ready · 37 hexes");
+  const navigatorRef = useRef<HTMLElement>(null);
+  const [status, setStatus] = useState<EditorStatus>({ action: "Ready", hexCount: 37 });
+  const [navigatorNodes, setNavigatorNodes] = useState<EditorHex[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [navigatorPage, setNavigatorPage] = useState(0);
+  const [navigatorLocale, setNavigatorLocale] = useState<"en" | "tr">("en");
 
   useEffect(() => {
     const host = hostRef.current;
@@ -86,7 +138,7 @@ export function HexCanvas() {
     canvas.tabIndex = 0;
     canvas.setAttribute(
       "aria-label",
-      "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom.",
+      "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.",
     );
     host.appendChild(canvas);
 
@@ -139,16 +191,21 @@ export function HexCanvas() {
 
     function updateStatus(prefix = "Ready"): void {
       const selected = selectedId ? nodeAt(selectedId) : undefined;
-      const selectedSuffix = selected
-        ? ` · ${selected.label} [q=${selected.q}, r=${selected.r}]`
-        : "";
-      const benchmarkSuffix = benchmarkMode
-        ? ` · rendered ${lastMetrics.renderedNodes}/${lastMetrics.totalNodes} · ${lastMetrics.renderMs.toFixed(1)}ms · ${Math.round(lastMetrics.scale * 100)}%`
-        : "";
-
-      setStatus(
-        `${prefix} · ${editor.nodes.length} hexes${selectedSuffix}${benchmarkSuffix}`,
-      );
+      setStatus({
+        action: prefix,
+        hexCount: editor.nodes.length,
+        selected: selected
+          ? { label: selected.label, q: selected.q, r: selected.r }
+          : undefined,
+        benchmark: benchmarkMode
+          ? {
+              rendered: lastMetrics.renderedNodes,
+              total: lastMetrics.totalNodes,
+              renderMs: lastMetrics.renderMs,
+              scale: lastMetrics.scale,
+            }
+          : undefined,
+      });
     }
 
     function drawConnectionPreview(node: EditorHex): number {
@@ -262,6 +319,14 @@ export function HexCanvas() {
         adjacentFaceCount,
       };
       window.__HEX_EDITOR_METRICS__ = lastMetrics;
+      setNavigatorNodes(editor.nodes.map((node) => ({ ...node })));
+      setSelectedNodeId(selectedId);
+      if (selectedId) {
+        const selectedIndex = editor.nodes.findIndex((node) => node.id === selectedId);
+        if (selectedIndex >= 0) {
+          setNavigatorPage(Math.floor(selectedIndex / NAVIGATOR_PAGE_SIZE));
+        }
+      }
 
       if (benchmarkMode) {
         updateStatus("Benchmark");
@@ -328,6 +393,53 @@ export function HexCanvas() {
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
     const onKeyDown = (event: KeyboardEvent) => {
+      const directions: Record<string, AxialCoordinate> = {
+        ArrowLeft: { q: -1, r: 0 },
+        ArrowRight: { q: 1, r: 0 },
+        ArrowUp: { q: 0, r: -1 },
+        ArrowDown: { q: 0, r: 1 },
+      };
+      const direction = directions[event.key];
+      if (direction) {
+        event.preventDefault();
+        if (!selectedId) {
+          selectedId = editor.nodes[0]?.id ?? null;
+          render();
+          updateStatus("Keyboard selected");
+          return;
+        }
+
+        const selected = nodeAt(selectedId);
+        if (!selected) {
+          return;
+        }
+        const target = {
+          q: selected.q + direction.q,
+          r: selected.r + direction.r,
+        };
+        if (event.shiftKey) {
+          if (editor.move(selectedId, target)) {
+            render();
+            updateStatus("Keyboard moved");
+          } else {
+            updateStatus("Move blocked");
+          }
+          return;
+        }
+
+        const adjacent = editor.nodes.find(
+          (node) => node.q === target.q && node.r === target.r,
+        );
+        if (adjacent) {
+          selectedId = adjacent.id;
+          render();
+          updateStatus("Keyboard selected");
+        } else {
+          updateStatus("No adjacent node");
+        }
+        return;
+      }
+
       const command = event.ctrlKey || event.metaKey;
       if (command && event.key.toLowerCase() === "z") {
         event.preventDefault();
@@ -382,6 +494,14 @@ export function HexCanvas() {
           updateStatus("Redo");
         }
       },
+      select: (id: string) => {
+        if (nodeAt(id)) {
+          selectedId = id;
+          render();
+          updateStatus("Navigator selected");
+        }
+      },
+      handleKey: onKeyDown,
     };
 
     render();
@@ -400,29 +520,115 @@ export function HexCanvas() {
     };
   }, []);
 
+  useEffect(() => {
+    hostRef.current?.querySelector("canvas")?.setAttribute(
+      "aria-label",
+      navigatorLocale === "tr"
+        ? "Etkileşimli altıgen tuvali. Altıgenleri sürükleyin, boş tuvali sürükleyerek kaydırın ve fare tekerleğiyle yakınlaştırın. Düğüm seçmek için ok tuşlarını, taşımak için Shift+ok tuşlarını kullanın."
+        : "Interactive hex canvas. Drag hexes, drag empty canvas to pan, and use the mouse wheel to zoom. Use arrow keys to select nodes and Shift+arrow keys to move them.",
+    );
+  }, [navigatorLocale]);
+
+  const navigatorPageCount = Math.max(1, Math.ceil(navigatorNodes.length / NAVIGATOR_PAGE_SIZE));
+  const safeNavigatorPage = Math.min(navigatorPage, navigatorPageCount - 1);
+  const navigatorStart = safeNavigatorPage * NAVIGATOR_PAGE_SIZE;
+  const navigatorEnd = Math.min(navigatorStart + NAVIGATOR_PAGE_SIZE, navigatorNodes.length);
+  const visibleNavigatorNodes = navigatorNodes.slice(navigatorStart, navigatorEnd);
+  const isTurkish = navigatorLocale === "tr";
+
   return (
-    <section className="editor-panel" aria-label="Hex editor">
-      <div className="toolbar" role="toolbar" aria-label="Hex editor controls">
+    <section className="editor-panel" lang={navigatorLocale} aria-label={isTurkish ? "Hex düzenleyici" : "Hex editor"}>
+      <div className="toolbar" role="toolbar" aria-label={isTurkish ? "Hex düzenleyici kontrolleri" : "Hex editor controls"}>
         <button type="button" onClick={() => actionsRef.current?.add()}>
-          Add hex
+          {isTurkish ? "Altıgen ekle" : "Add hex"}
         </button>
         <button type="button" onClick={() => actionsRef.current?.remove()}>
-          Delete selected
+          {isTurkish ? "Seçileni sil" : "Delete selected"}
         </button>
         <button type="button" onClick={() => actionsRef.current?.undo()}>
-          Undo
+          {isTurkish ? "Geri al" : "Undo"}
         </button>
         <button type="button" onClick={() => actionsRef.current?.redo()}>
-          Redo
+          {isTurkish ? "Yinele" : "Redo"}
         </button>
         <span className="status" role="status" aria-live="polite">
-          {status}
+          {formatEditorStatus(status, navigatorLocale)}
         </span>
       </div>
       <div ref={hostRef} className="canvas-host" />
+      <nav ref={navigatorRef} className="graph-navigator" lang={navigatorLocale}
+        aria-label={isTurkish ? "Grafik gezgini" : "Graph navigator"}>
+        <label>
+          {isTurkish ? "Gezgin dili" : "Navigator language"}
+          <select value={navigatorLocale}
+            onChange={(event) => setNavigatorLocale(event.target.value as "en" | "tr")}>
+            <option value="en">English</option>
+            <option value="tr">Türkçe</option>
+          </select>
+        </label>
+        <h2>{isTurkish ? "Grafik gezgini" : "Graph navigator"}</h2>
+        <p>{isTurkish
+          ? "Sürüklemeden düğüm seçin. Seçimi ok tuşlarıyla taşıyın; seçili düğümü taşımak için Shift tuşunu basılı tutun."
+          : "Choose a node without dragging. Use arrow keys to move selection; hold Shift to move the selected node."}</p>
+        <p role="status" aria-live="polite">
+          {isTurkish ? (
+            <>{navigatorNodes.length ? navigatorStart + 1 : 0}–{navigatorEnd} / {navigatorNodes.length} düğüm gösteriliyor (sayfa {safeNavigatorPage + 1} / {navigatorPageCount}).</>
+          ) : (
+            <>Showing {navigatorNodes.length ? navigatorStart + 1 : 0}–{navigatorEnd} of {navigatorNodes.length} nodes (page {safeNavigatorPage + 1} of {navigatorPageCount}).</>
+          )}
+        </p>
+        <div className="navigator-pagination">
+          <button type="button" disabled={safeNavigatorPage === 0}
+            onClick={() => setNavigatorPage(0)}>
+            {isTurkish ? "İlk sayfa" : "First page"}
+          </button>
+          <button type="button" disabled={safeNavigatorPage === 0}
+            onClick={() => setNavigatorPage((current) => Math.max(0, current - 1))}>
+            {isTurkish ? "Önceki sayfa" : "Previous page"}
+          </button>
+          <button type="button" disabled={safeNavigatorPage === navigatorPageCount - 1}
+            onClick={() => setNavigatorPage((current) => Math.min(navigatorPageCount - 1, current + 1))}>
+            {isTurkish ? "Sonraki sayfa" : "Next page"}
+          </button>
+          <button type="button" disabled={safeNavigatorPage === navigatorPageCount - 1}
+            onClick={() => setNavigatorPage(navigatorPageCount - 1)}>
+            {isTurkish ? "Son sayfa" : "Last page"}
+          </button>
+        </div>
+        <ol>
+          {visibleNavigatorNodes.map((node) => (
+            <li key={node.id}>
+              <button
+                type="button"
+                aria-current={node.id === selectedNodeId ? "true" : undefined}
+                onClick={() => actionsRef.current?.select(node.id)}
+                onKeyDown={(event) => {
+                  if (!event.key.startsWith("Arrow")) return;
+                  event.preventDefault();
+                  actionsRef.current?.handleKey(
+                    new KeyboardEvent("keydown", {
+                      key: event.key,
+                      shiftKey: event.shiftKey,
+                      cancelable: true,
+                    }),
+                  );
+                  requestAnimationFrame(() => {
+                    navigatorRef.current
+                      ?.querySelector<HTMLButtonElement>('button[aria-current="true"]')
+                      ?.focus();
+                  });
+                }}
+              >
+                {node.label} {isTurkish ? "konum" : "at"} q {node.q}, r {node.r}
+              </button>
+            </li>
+          ))}
+        </ol>
+      </nav>
       <footer className="hint">
-        Drag a hex to snap · drag empty space to pan · wheel to zoom · Ctrl/Cmd+Z
-        to undo
+        {isTurkish
+          ? "Altıgeni sürükleyerek yerleştirin · boş alanı sürükleyerek kaydırın · tekerlekle yakınlaştırın · Ctrl/Cmd+Z ile geri alın"
+          : "Drag a hex to snap · drag empty space to pan · wheel to zoom · Ctrl/Cmd+Z to undo"}
       </footer>
     </section>
   );

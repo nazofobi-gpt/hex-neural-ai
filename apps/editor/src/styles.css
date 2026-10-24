@@ -84,6 +84,7 @@ button:focus-visible {
 }
 
 .editor-panel {
+  position: relative;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -122,12 +123,116 @@ button:focus-visible {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+.graph-navigator {
+  position: absolute;
+  z-index: 2;
+  top: 66px;
+  right: 14px;
+  bottom: 42px;
+  width: min(300px, 32vw);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.24);
+}
+
+.graph-navigator h2,
+.graph-navigator p {
+  margin: 0 0 10px;
+}
+
+.graph-navigator h2 {
+  font-size: 14px;
+}
+
+.graph-navigator p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.graph-navigator .navigator-pagination {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.graph-navigator .navigator-pagination button {
+  text-align: center;
+}
+
+.graph-navigator ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.graph-navigator button {
+  width: 100%;
+  text-align: left;
+}
+
+.graph-navigator button[aria-current="true"] {
+  border-color: var(--accent);
+  background: var(--control-active, var(--control));
+}
+
 .hint {
   padding: 7px 14px;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-1);
   color: var(--text-subtle);
   font-size: 12px;
+}
+
+
+/* At a 200%-equivalent compact viewport, keep the non-visual navigator
+   in document flow rather than trapping it inside a clipped canvas overlay. */
+@media (max-width: 760px) and (max-height: 600px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    grid-template-rows: auto auto;
+  }
+
+  .editor-panel {
+    grid-template-rows: auto minmax(240px, 45vh) auto auto;
+  }
+
+  .canvas-host {
+    min-height: 240px;
+  }
+
+  .graph-navigator {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    width: auto;
+    max-height: min(45vh, 360px);
+    margin: 12px;
+    grid-row: 3;
+  }
+
+  .hint {
+    grid-row: 4;
+  }
 }
 
 @media (max-width: 760px) {
@@ -148,9 +253,14 @@ button:focus-visible {
     width: 100%;
     margin-left: 0;
   }
+
+  .graph-navigator {
+    width: min(240px, 52vw);
+  }
 }
 
 button:focus-visible,
+.graph-navigator select:focus-visible,
 .canvas-host canvas:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -159,4 +269,22 @@ button:focus-visible,
 button:disabled {
   cursor: not-allowed;
   opacity: .55;
+}
+
+
+/* Windows forced-colors mode suppresses shadow-only focus rings.
+   Use system colors for a visible current-node marker and keyboard focus. */
+@media (forced-colors: active) {
+  .graph-navigator button[aria-current="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  button:focus-visible,
+  .graph-navigator select:focus-visible,
+  .canvas-host canvas:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
 }
