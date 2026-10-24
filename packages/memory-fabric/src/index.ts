@@ -70,9 +70,9 @@ export class MemoryFabric {
     const created: MemoryChunk[] = [];
     for (let ordinal = 0; ordinal < parts.length; ordinal++) {
       const part = parts[ordinal];
-      const digest = simpleDigest(part);
-      if (seen.has(digest)) continue;
-      seen.add(digest);
+      // A 32-bit digest can collide for distinct chunks: deduplicate by exact text.
+      if (seen.has(part)) continue;
+      seen.add(part);
       const chunk: MemoryChunk = Object.freeze({
         id: chunkId(source, ordinal, part), sourceId: source.sourceId, sourceVersion: source.version,
         checksum: source.checksum, scope: source.scope, text: part, ordinal
