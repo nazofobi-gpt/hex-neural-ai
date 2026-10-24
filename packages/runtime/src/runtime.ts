@@ -316,14 +316,14 @@ export function runExecutableGraph(
         seed: executable.seed,
         sequence,
       });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
+    } catch {
+      // Never inspect or stringify adapter-thrown values: Error.message,
+      // toString and coercion hooks can disclose secrets or execute code.
       return finalize(
         options,
         executable,
         "ADAPTER_FAILED",
-        `Adapter ${adapter.id} failed at node ${node.id}: ${message}`,
+        "Runtime adapter execution failed; details withheld from run receipts.",
         trace,
         checkpoints,
         artifacts,

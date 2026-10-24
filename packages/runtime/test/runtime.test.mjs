@@ -564,3 +564,40 @@ test("reject non-finite and negative adapter budget metrics", () => {
     }
   }
 });
+
+test("adapter exception payloads never leak into run receipts or execute thrown-object accessors", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const secret = "sk-private-adapter-exception-token";
+  let inspected = 0;
+  const hostile = new Error("hidden");
+  Object.defineProperty(hostile, "message", {
+    get() {
+      inspected += 1;
+      throw new Error(secret);
+    },
+  });
+  const cases = [new Error(secret), hostile, {
+    toString() {
+      inspected += 1;
+      throw new Error(secret);
+    },
+  }];
+
+  for (const [index, thrown] of cases.entries()) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => { throw thrown; };
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions(`adapter-exception-privacy-${index}`),
+      adapters: fixture,
+    });
+    assert.equal(receipt.status, "terminated");
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.termination.message,
+      "Runtime adapter execution failed; details withheld from run receipts.");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+    assert.ok(!serializeRunReceipt(receipt).includes(secret));
+  }
+  assert.equal(inspected, 0);
+});
