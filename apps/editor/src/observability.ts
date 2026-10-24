@@ -171,25 +171,50 @@ const REDACTED = "[REDACTED]";
 const forbiddenKey = /(authorization|token|secret|password|credential|payload|prompt|requestbody|responsebody|rawbody|api[_-]?key|access[_-]?key|private[_-]?key|cookie|session[_-]?id|signature|signed[_-]?url)/i;
 const sensitiveString = /((?:bearer|basic)\s+[a-z0-9._~+\/-]+=*|sk-[a-z0-9_-]{8,}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|session[_-]?token)\s*[:=]\s*[^\s&]+|https?:\/\/[^\/\s@]+:[^\/\s@]+@|[?&#](?:token|key|sig|signature|secret|session[_-]?id|x-amz-(?:signature|credential|security-token)|x-goog-(?:signature|credential))\s*=\s*[^&#\s]+|(?:gh[pousr]_[a-z0-9_]{16,}|github_pat_[a-z0-9_]{16,}))/i;
 
-function redactValue(value: unknown, visited: WeakSet<object>): unknown {
+// Untrusted adapter attributes are never allowed to exhaust the UI stack or
+// invoke property getters while rendering telemetry. Oversized/exotic data is
+// replaced, not partially logged: omitted fields must not silently leak.
+const MAX_TELEMETRY_DEPTH = 32;
+const MAX_TELEMETRY_ENTRIES = 256;
+
+function redactValue(value: unknown, visited: WeakSet<object>, depth = 0): unknown {
   if (typeof value === "string") return sensitiveString.test(value) ? REDACTED : value;
-  if (value && typeof value === "object") {
-    // Circular and aliased telemetry must never recurse forever or leak raw data.
-    if (visited.has(value)) return REDACTED;
-    visited.add(value);
-    if (Array.isArray(value)) return value.map((item) => redactValue(item, visited));
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-        key,
-        forbiddenKey.test(key) ? REDACTED : redactValue(entry, visited),
-      ]),
-    );
+  if (value === null || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value !== "object") return REDACTED;
+  if (depth >= MAX_TELEMETRY_DEPTH || visited.has(value)) return REDACTED;
+  visited.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (value.length > MAX_TELEMETRY_ENTRIES) return REDACTED;
+      return Array.from({ length: value.length }, (_, index) => {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        return descriptor && "value" in descriptor
+          ? redactValue(descriptor.value, visited, depth + 1)
+          : REDACTED;
+      });
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return REDACTED;
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const entries = Object.entries(descriptors).filter(([, descriptor]) => descriptor.enumerable);
+    if (entries.length > MAX_TELEMETRY_ENTRIES) return REDACTED;
+    return Object.fromEntries(entries.map(([key, descriptor]) => [
+      key,
+      forbiddenKey.test(key) || !("value" in descriptor)
+        ? REDACTED
+        : redactValue(descriptor.value, visited, depth + 1),
+    ]));
+  } catch {
+    // Hostile proxies, revoked objects and failing reflection are untrusted.
+    return REDACTED;
   }
-  return value;
 }
 
 export function redactTelemetry(attributes: Record<string, unknown>): Record<string, unknown> {
-  return redactValue(attributes, new WeakSet<object>()) as Record<string, unknown>;
+  const safe = redactValue(attributes, new WeakSet<object>());
+  return safe !== null && typeof safe === "object" && !Array.isArray(safe)
+    ? safe as Record<string, unknown>
+    : { _telemetry: REDACTED };
 }
 
 export function sanitizeLogEntry(entry: LogEntryV1): LogEntryV1 {
