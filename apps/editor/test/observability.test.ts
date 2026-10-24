@@ -238,6 +238,7 @@ describe("obs.v1 telemetry semantics", () => {
       maxCostUnits: 8,
       status: "completed",
       terminationCode: "COMPLETED",
+      totalExternalCalls: 2,
       providerTrace: [
         { traceId: "trace-1", externalCalls: 1,
           providerMeter: { amountUsd: 0.017, source: "provider-usage", receiptId: "bill-1" } },
@@ -264,6 +265,7 @@ describe("obs.v1 telemetry semantics", () => {
       maxCostUnits: 8,
       status: "completed" as const,
       terminationCode: "COMPLETED",
+      totalExternalCalls: 2,
     };
     const good = { traceId: "trace-1", externalCalls: 1,
       providerMeter: { amountUsd: 0.01, receiptId: "bill-1", source: "provider" } };
@@ -275,6 +277,40 @@ describe("obs.v1 telemetry semantics", () => {
     for (const providerTrace of trials) {
       const result = projectRuntimeReceipt({ ...common, providerTrace });
       expect(result.snapshot.costs[0].actualUsd.state).toBe("UNKNOWN");
+    }
+  });
+
+  it("keeps provider USD UNKNOWN for omitted trace events and unbound runtime call totals", () => {
+    const base = {
+      runId: "coverage-guard",
+      graphId: "g1",
+      runtimeMs: 10,
+      processedSignals: 2,
+      costUnits: 4,
+      maxCostUnits: 8,
+      status: "completed" as const,
+      terminationCode: "COMPLETED",
+    };
+    const metered = {
+      traceId: "trace-1",
+      externalCalls: 1,
+      providerMeter: { amountUsd: 0.01, receiptId: "bill-1", source: "provider" },
+    };
+    const incomplete = [
+      { providerTrace: [metered] }, // No independent run total.
+      { totalExternalCalls: 2, providerTrace: [metered] }, // One call omitted.
+      { totalExternalCalls: 1, providerTrace: [{ ...metered, externalCalls: 2 }] },
+      { totalExternalCalls: 1, providerTrace: [{ ...metered, externalCalls: 0 }] },
+      { totalExternalCalls: 1, providerTrace: [{ ...metered, externalCalls: 0.5 }] },
+      { totalExternalCalls: Number.NaN, providerTrace: [metered] },
+      { totalExternalCalls: 1, providerTrace: [
+        metered,
+        { ...metered, providerMeter: { ...metered.providerMeter, receiptId: "bill-2" } },
+      ] },
+    ];
+    for (const partial of incomplete) {
+      expect(projectRuntimeReceipt({ ...base, ...partial }).snapshot.costs[0].actualUsd.state)
+        .toBe("UNKNOWN");
     }
   });
 
