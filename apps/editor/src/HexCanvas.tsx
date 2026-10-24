@@ -35,6 +35,7 @@ interface CanvasActions {
   undo: () => void;
   redo: () => void;
   select: (id: string) => void;
+  handleKey: (event: KeyboardEvent) => void;
 }
 
 interface EditorMetrics {
@@ -68,6 +69,7 @@ function benchmarkRadius(): number | null {
 export function HexCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<CanvasActions | null>(null);
+  const navigatorRef = useRef<HTMLElement>(null);
   const [status, setStatus] = useState("Ready · 37 hexes");
   const [navigatorNodes, setNavigatorNodes] = useState<EditorHex[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -439,9 +441,9 @@ export function HexCanvas() {
           selectedId = id;
           render();
           updateStatus("Navigator selected");
-          canvas.focus();
         }
       },
+      handleKey: onKeyDown,
     };
 
     render();
@@ -480,7 +482,7 @@ export function HexCanvas() {
         </span>
       </div>
       <div ref={hostRef} className="canvas-host" />
-      <nav className="graph-navigator" aria-label="Graph navigator">
+      <nav ref={navigatorRef} className="graph-navigator" aria-label="Graph navigator">
         <h2>Graph navigator</h2>
         <p>Choose a node without dragging. Use arrow keys to move selection; hold Shift to move the selected node.</p>
         <ol>
@@ -490,6 +492,22 @@ export function HexCanvas() {
                 type="button"
                 aria-current={node.id === selectedNodeId ? "true" : undefined}
                 onClick={() => actionsRef.current?.select(node.id)}
+                onKeyDown={(event) => {
+                  if (!event.key.startsWith("Arrow")) return;
+                  event.preventDefault();
+                  actionsRef.current?.handleKey(
+                    new KeyboardEvent("keydown", {
+                      key: event.key,
+                      shiftKey: event.shiftKey,
+                      cancelable: true,
+                    }),
+                  );
+                  requestAnimationFrame(() => {
+                    navigatorRef.current
+                      ?.querySelector<HTMLButtonElement>('button[aria-current="true"]')
+                      ?.focus();
+                  });
+                }}
               >
                 {node.label} at q {node.q}, r {node.r}
               </button>

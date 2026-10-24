@@ -77,6 +77,24 @@ test("keyboard navigation selects and moves nodes without drag", async ({ page }
   ).toHaveAttribute("aria-current", "true");
 });
 
+test("graph navigator retains focus and supports arrow selection", async ({ page }) => {
+  await page.goto("/");
+
+  const navigator = page.getByRole("navigation", { name: "Graph navigator" });
+  const first = navigator.getByRole("button", { name: "Hex 1 at q -3, r 0" });
+  await first.click();
+  await expect(first).toBeFocused();
+  await expect(first).toHaveAttribute("aria-current", "true");
+
+  await first.press("ArrowRight");
+  const selected = navigator.locator('button[aria-current="true"]');
+  await expect(selected).toHaveCount(1);
+  await expect(selected).toBeFocused();
+  const metrics = await readMetrics(page);
+  expect(metrics.selectedQ).toBe(-2);
+  expect(metrics.selectedR).toBe(0);
+});
+
 test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face adjacency", async ({
   page,
 }) => {
