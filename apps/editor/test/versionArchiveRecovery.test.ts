@@ -177,7 +177,7 @@ describe("G-263 guarded archived-head recovery", () => {
     const backup = plan.backupArchive;
     await applyArchivedHeadRecovery(local, plan, restoreInput);
     expect(backup).toBe(plan.backupArchive);
-    expect((await import("../src/versionArchive")).inspectVersionArchive(
+    await expect((await import("../src/versionArchive")).inspectVersionArchive(
       backup, "project-A",
     )).resolves.toMatchObject({ headId: "local-v1" });
     expect(local.load().headId).toBe("local-v2");
