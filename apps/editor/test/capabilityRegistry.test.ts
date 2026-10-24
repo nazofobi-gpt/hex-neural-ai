@@ -15,6 +15,16 @@ describe("capability registry", () => {
     expect(registerCapability(base, { ...healthy, grantedScopes: [] })).toMatchObject({ state: "quarantined", reason: expect.stringContaining("documents:read") });
   });
 
+  it("never retains or serializes invalid inline credential values", () => {
+    const inlineSecret = "sk-test-NEVER-PERSIST-THIS-VALUE";
+    for (const protocol of [base.protocol, "unsupported-protocol"]) {
+      const result = registerCapability({ ...base, protocol, credentialRef: `  ${inlineSecret}  ` }, healthy);
+      expect(result).toMatchObject({ state: "quarantined", credentialRef: null });
+      expect(JSON.stringify(result)).not.toContain(inlineSecret);
+      expect(JSON.stringify(disableCapability(result))).not.toContain(inlineSecret);
+    }
+  });
+
   it("routes authentication failure to reconnect and rolls back reversible changes", () => {
     expect(registerCapability(base, { ...healthy, authenticated: false })).toMatchObject({ state: "degraded", reason: expect.stringContaining("Reconnect") });
     const disabled = disableCapability(registerCapability(base, healthy));

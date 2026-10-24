@@ -148,8 +148,13 @@ export function discoverLocalRuntimes(candidates: LocalRuntimeCandidate[]): Disc
   return { accepted: accepted.sort((a, b) => a.id.localeCompare(b.id)), rejected };
 }
 
+function safeCredentialRef(raw: string | undefined): string | null {
+  const value = raw?.trim() || null;
+  return value && credentialReference.test(value) ? value : null;
+}
+
 function initial(input: ConnectionInput, state: CapabilityState, reason: string | null, checkedAt: string | null = null): CapabilityRecord {
-  return { id: input.id, label: input.label, kind: input.kind, protocol: input.protocol, metadata: { compatibility: [...(input.metadata?.compatibility ?? [])], resourceClass: input.metadata?.resourceClass ?? "remote", license: input.metadata?.license ?? "unknown" }, priority: input.priority ?? 100, version: 1, state, credentialRef: input.credentialRef?.trim() || null, permissions: input.permissions.map((permission) => ({ ...permission })), checkedAt, reason, health: [], history: [] };
+  return { id: input.id, label: input.label, kind: input.kind, protocol: input.protocol, metadata: { compatibility: [...(input.metadata?.compatibility ?? [])], resourceClass: input.metadata?.resourceClass ?? "remote", license: input.metadata?.license ?? "unknown" }, priority: input.priority ?? 100, version: 1, state, credentialRef: safeCredentialRef(input.credentialRef), permissions: input.permissions.map((permission) => ({ ...permission })), checkedAt, reason, health: [], history: [] };
 }
 
 function revise(record: CapabilityRecord, state: CapabilityState, reason: string): CapabilityRecord {
