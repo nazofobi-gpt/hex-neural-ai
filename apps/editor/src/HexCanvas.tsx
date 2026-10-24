@@ -75,6 +75,7 @@ export function HexCanvas() {
   const [navigatorNodes, setNavigatorNodes] = useState<EditorHex[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [navigatorPage, setNavigatorPage] = useState(0);
+  const [navigatorLocale, setNavigatorLocale] = useState<"en" | "tr">("en");
 
   useEffect(() => {
     const host = hostRef.current;
@@ -475,6 +476,7 @@ export function HexCanvas() {
   const navigatorStart = safeNavigatorPage * NAVIGATOR_PAGE_SIZE;
   const navigatorEnd = Math.min(navigatorStart + NAVIGATOR_PAGE_SIZE, navigatorNodes.length);
   const visibleNavigatorNodes = navigatorNodes.slice(navigatorStart, navigatorEnd);
+  const isTurkish = navigatorLocale === "tr";
 
   return (
     <section className="editor-panel" aria-label="Hex editor">
@@ -496,28 +498,43 @@ export function HexCanvas() {
         </span>
       </div>
       <div ref={hostRef} className="canvas-host" />
-      <nav ref={navigatorRef} className="graph-navigator" aria-label="Graph navigator">
-        <h2>Graph navigator</h2>
-        <p>Choose a node without dragging. Use arrow keys to move selection; hold Shift to move the selected node.</p>
+      <nav ref={navigatorRef} className="graph-navigator" lang={navigatorLocale}
+        aria-label={isTurkish ? "Grafik gezgini" : "Graph navigator"}>
+        <label>
+          {isTurkish ? "Gezgin dili" : "Navigator language"}
+          <select value={navigatorLocale}
+            onChange={(event) => setNavigatorLocale(event.target.value as "en" | "tr")}>
+            <option value="en">English</option>
+            <option value="tr">Türkçe</option>
+          </select>
+        </label>
+        <h2>{isTurkish ? "Grafik gezgini" : "Graph navigator"}</h2>
+        <p>{isTurkish
+          ? "Sürüklemeden düğüm seçin. Seçimi ok tuşlarıyla taşıyın; seçili düğümü taşımak için Shift tuşunu basılı tutun."
+          : "Choose a node without dragging. Use arrow keys to move selection; hold Shift to move the selected node."}</p>
         <p role="status" aria-live="polite">
-          Showing {navigatorNodes.length ? navigatorStart + 1 : 0}–{navigatorEnd} of {navigatorNodes.length} nodes (page {safeNavigatorPage + 1} of {navigatorPageCount}).
+          {isTurkish ? (
+            <>{navigatorNodes.length ? navigatorStart + 1 : 0}–{navigatorEnd} / {navigatorNodes.length} düğüm gösteriliyor (sayfa {safeNavigatorPage + 1} / {navigatorPageCount}).</>
+          ) : (
+            <>Showing {navigatorNodes.length ? navigatorStart + 1 : 0}–{navigatorEnd} of {navigatorNodes.length} nodes (page {safeNavigatorPage + 1} of {navigatorPageCount}).</>
+          )}
         </p>
         <div className="navigator-pagination">
           <button type="button" disabled={safeNavigatorPage === 0}
             onClick={() => setNavigatorPage(0)}>
-            First page
+            {isTurkish ? "İlk sayfa" : "First page"}
           </button>
           <button type="button" disabled={safeNavigatorPage === 0}
             onClick={() => setNavigatorPage((current) => Math.max(0, current - 1))}>
-            Previous page
+            {isTurkish ? "Önceki sayfa" : "Previous page"}
           </button>
           <button type="button" disabled={safeNavigatorPage === navigatorPageCount - 1}
             onClick={() => setNavigatorPage((current) => Math.min(navigatorPageCount - 1, current + 1))}>
-            Next page
+            {isTurkish ? "Sonraki sayfa" : "Next page"}
           </button>
           <button type="button" disabled={safeNavigatorPage === navigatorPageCount - 1}
             onClick={() => setNavigatorPage(navigatorPageCount - 1)}>
-            Last page
+            {isTurkish ? "Son sayfa" : "Last page"}
           </button>
         </div>
         <ol>
@@ -544,7 +561,7 @@ export function HexCanvas() {
                   });
                 }}
               >
-                {node.label} at q {node.q}, r {node.r}
+                {node.label} {isTurkish ? "konum" : "at"} q {node.q}, r {node.r}
               </button>
             </li>
           ))}
