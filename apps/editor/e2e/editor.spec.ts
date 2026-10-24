@@ -313,7 +313,7 @@ test("Windows forced-colors navigator keeps keyboard focus and current node visi
   await expect(language).toHaveCSS("outline-width", "2px");
 
   const first = navigator.getByRole("button", { name: "Hex 1 at q -3, r 0" });
-  await first.focus();
+  await first.click();
   await first.press("ArrowRight");
   const selected = navigator.locator('button[aria-current="true"]');
   await expect(selected).toBeFocused();
