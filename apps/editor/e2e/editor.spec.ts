@@ -71,7 +71,7 @@ test("keyboard navigation selects and moves nodes without drag", async ({ page }
   expect(metrics.selectedR).toBe(0);
 
   const navigator = page.getByRole("navigation", { name: "Graph navigator" });
-  await expect(navigator.getByRole("button")).toHaveCount(37);
+  await expect(navigator.locator("ol button")).toHaveCount(37);
   await expect(
     navigator.getByRole("button", { name: "Hex 1 at q -4, r 0" }),
   ).toHaveAttribute("aria-current", "true");
@@ -93,6 +93,34 @@ test("graph navigator retains focus and supports arrow selection", async ({ page
   const metrics = await readMetrics(page);
   expect(metrics.selectedQ).toBe(-2);
   expect(metrics.selectedR).toBe(0);
+});
+
+test("2k graph navigator keeps DOM bounded while every node remains reachable", async ({ page }) => {
+  await page.goto("/?benchmark=2107");
+  const navigator = page.getByRole("navigation", { name: "Graph navigator" });
+  const nodeButtons = navigator.locator("ol button");
+  const next = navigator.getByRole("button", { name: "Next page" });
+  const previous = navigator.getByRole("button", { name: "Previous page" });
+
+  await expect(nodeButtons).toHaveCount(100);
+  await expect(navigator.getByRole("status")).toContainText("Showing 1–100 of 2107 nodes");
+  await expect(previous).toBeDisabled();
+
+  for (let pageIndex = 1; pageIndex < 22; pageIndex += 1) {
+    await next.click();
+    await expect(navigator.getByRole("status")).toContainText(`page ${pageIndex + 1} of 22`);
+    await expect(nodeButtons).toHaveCount(pageIndex === 21 ? 7 : 100);
+  }
+
+  await expect(navigator.getByRole("status")).toContainText("Showing 2101–2107 of 2107 nodes");
+  await expect(next).toBeDisabled();
+  const lastNode = nodeButtons.last();
+  await lastNode.click();
+  await expect(lastNode).toHaveAttribute("aria-current", "true");
+  await expect(lastNode).toBeFocused();
+  const metrics = await readMetrics(page);
+  expect(metrics.totalNodes).toBe(2107);
+  expect(metrics.selectedId).toBe("hex-2107");
 });
 
 test("mouse interactions select, drag-snap, undo/redo, pan, zoom and expose face adjacency", async ({
