@@ -6,7 +6,9 @@ import {
   evaluateBudget,
   known,
   projectRuntimeReceipt,
+  projectRecordedRuntimeReceipt,
   redactTelemetry,
+  sanitizeLogEntry,
   unknown,
   virtualizeLogWindow,
   type CostLineV1,
@@ -99,6 +101,138 @@ describe("obs.v1 telemetry semantics", () => {
     });
   });
 
+  it("redacts API keys, cookies, URL credentials and circular attributes", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const sanitized = redactTelemetry({
+      apiKey: "fixture-key",
+      "set-cookie": "session=fixture-cookie",
+      nested: { access_key: "fixture-access", safe: "ok" },
+      url: "https://example.test/?api_key=fixture-query&mode=read",
+      cycle: cyclic,
+    });
+    expect(sanitized).toEqual({
+      apiKey: "[REDACTED]",
+      "set-cookie": "[REDACTED]",
+      nested: { access_key: "[REDACTED]", safe: "ok" },
+      url: "[REDACTED]",
+      cycle: { self: "[REDACTED]" },
+    });
+    expect(sanitizeLogEntry({
+      id: "log-1",
+      level: "warn",
+      message: "authorization=fixture-header",
+      attributes: { note: "safe" },
+    }).message).toBe("[REDACTED]");
+  });
+
+  it("redacts Basic auth, URL userinfo, signed URLs and PAT-shaped telemetry", () => {
+    const safeUrl = "https://example.test/public?mode=read";
+    expect(redactTelemetry({
+      authHeader: "Basic dXNlcjpwYXNz",
+      endpoint: "https://alice:private-pass@example.test/api",
+      link: "https://cdn.example.test/object?X-Amz-Signature=private-signature&mode=read",
+      message: "github_pat_abcdefghijklmnopqrstuvwxyz0123456789",
+      sessionId: "session-private",
+      safeUrl,
+    })).toEqual({
+      authHeader: "[REDACTED]",
+      endpoint: "[REDACTED]",
+      link: "[REDACTED]",
+      message: "[REDACTED]",
+      sessionId: "[REDACTED]",
+      safeUrl,
+    });
+    expect(sanitizeLogEntry({
+      id: "log-basic",
+      level: "warn",
+      message: "Basic dXNlcjpwYXNz",
+      attributes: { note: "safe" },
+    }).message).toBe("[REDACTED]");
+  });
+
+  it("never invokes telemetry getters or propagates exotic objects and proxy errors", () => {
+    let getterCalls = 0;
+    const accessor = Object.defineProperty({ safe: "ok" }, "innocent", {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return "Bearer should-never-be-read";
+      },
+    });
+    const hostile = new Proxy({}, {
+      ownKeys() { throw new Error("untrusted proxy trap"); },
+    });
+    expect(redactTelemetry({
+      nested: accessor,
+      date: new Date("2026-01-01T00:00:00Z"),
+      hostile,
+    })).toEqual({
+      nested: { safe: "ok", innocent: "[REDACTED]" },
+      date: "[REDACTED]",
+      hostile: "[REDACTED]",
+    });
+    expect(getterCalls).toBe(0);
+  });
+
+  it("bounds deeply nested and oversized telemetry before serializing logs", () => {
+    let deep: Record<string, unknown> = { leaf: "safe" };
+    for (let index = 0; index < 80; index += 1) deep = { nested: deep };
+    const sanitized = redactTelemetry({
+      deep,
+      hugeArray: Array.from({ length: 257 }, () => "safe"),
+      hugeObject: Object.fromEntries(Array.from({ length: 257 }, (_, index) => [`k${index}`, "safe"])),
+    });
+    expect(sanitized.hugeArray).toBe("[REDACTED]");
+    expect(sanitized.hugeObject).toBe("[REDACTED]");
+    expect(JSON.stringify(sanitized)).toContain("[REDACTED]");
+    expect(sanitizeLogEntry({
+      id: "deep-1",
+      level: "info",
+      message: "safe",
+      attributes: { deep },
+    }).attributes.deep).toEqual(sanitized.deep);
+  });
+
+  it("never executes getters on untrusted root log records", () => {
+    let getterCalls = 0;
+    const root = Object.defineProperties({}, {
+      id: { enumerable: true, get() { getterCalls += 1; return "log-secret"; } },
+      level: { enumerable: true, value: "info" },
+      message: { enumerable: true, get() { getterCalls += 1; return "Bearer never-read"; } },
+      attributes: { enumerable: true, get() { getterCalls += 1; return { token: "secret" }; } },
+    }) as Parameters<typeof sanitizeLogEntry>[0];
+    expect(sanitizeLogEntry(root)).toEqual({
+      id: "[REDACTED]",
+      level: "info",
+      message: "[REDACTED]",
+      attributes: { _telemetry: "[REDACTED]" },
+    });
+    expect(getterCalls).toBe(0);
+
+    const revoked = Proxy.revocable({
+      id: "log", level: "info" as const, message: "ok", attributes: {},
+    }, {});
+    revoked.revoke();
+    expect(sanitizeLogEntry(revoked.proxy)).toEqual({
+      id: "[REDACTED]", level: "warn", message: "[REDACTED]",
+      attributes: { _telemetry: "[REDACTED]" },
+    });
+  });
+
+  it("redacts sensitive and oversized root log metadata before display", () => {
+    const sanitized = sanitizeLogEntry({
+      id: "Bearer abcdef123456",
+      level: "warn",
+      message: "x".repeat(8193),
+      attributes: { safe: "ok" },
+    });
+    expect(sanitized).toEqual({
+      id: "[REDACTED]", level: "warn", message: "[REDACTED]",
+      attributes: { safe: "ok" },
+    });
+  });
+
   it("bounds large-log rendering windows and sanitizes returned entries", () => {
     const entries = Array.from({ length: 500 }, (_, index) => ({
       id: `log-${index}`,
@@ -187,21 +321,11 @@ describe("obs.v1 telemetry semantics", () => {
 
     expect(receipt.termination.code).toBe("MAX_COST_EXCEEDED");
 
-    const projection = projectRuntimeReceipt({
-      runId: receipt.runId,
-      graphId: receipt.graphId,
-      checkpointId: receipt.checkpoints.at(-1)?.id,
-      clusterId: "cluster-1",
-      replicaId: "local-1",
-      generationId: "2",
-      messageId: "m-1",
-      runtimeMs: receipt.totals.runtimeMs,
-      processedSignals: receipt.totals.processedSignals,
-      costUnits: receipt.totals.costUnits,
-      maxCostUnits: executable.budget.maxCostUnits,
-      status: receipt.status,
-      terminationCode: receipt.termination.code,
-    });
+    const projection = projectRecordedRuntimeReceipt(
+      receipt,
+      executable.budget.maxCostUnits,
+      { clusterId: "cluster-1", replicaId: "local-1", generationId: "2", messageId: "m-1" },
+    );
 
     expect(projection.runtimeBudget).toEqual({
       measuredCostUnits: 2,
@@ -225,6 +349,144 @@ describe("obs.v1 telemetry semantics", () => {
       reason: "COST_UNKNOWN",
     });
     expect(JSON.stringify(projection.snapshot)).not.toContain("artifact://private-input");
+
+
+    // This second run uses the real G-200 runtime to produce a metered trace.
+    // The projection must derive the denominator from receipt.totals.externalCalls.
+    const meteredReceipt = runExecutableGraph(executable, {
+      runId: "runtime-provider-meter-proof",
+      startedAt: "2026-10-07T14:00:00+02:00",
+      completedAt: "2026-10-07T14:00:01+02:00",
+      initialPayloadRef: "artifact://private-input",
+      initialSchema: null,
+      traceId: "trace-runtime-meter",
+      adapters: {
+        byNodeId: {
+          tool: {
+            id: "tool.provider-metered",
+            execute: () => ({
+              externalCalls: 1,
+              costUnits: 2,
+              durationMs: 4,
+              providerMeter: {
+                amountUsd: 0.017,
+                receiptId: "fixture-bill-17",
+                source: "fixture-provider-usage",
+              },
+            }),
+          },
+        },
+      },
+    });
+    expect(meteredReceipt.totals.externalCalls).toBe(1);
+    const meteredProjection = projectRecordedRuntimeReceipt(
+      meteredReceipt,
+      executable.budget.maxCostUnits,
+    );
+    expect(meteredProjection.snapshot.costs[0].actualUsd).toEqual(
+      known(0.017, "obs.v1:adapter-reported-provider-meter-receipts"),
+    );
+    expect(meteredProjection.snapshot.costs.slice(1).every((line) => line.actualUsd.state === "UNKNOWN"))
+      .toBe(true);
+    expect(evaluateBudget(meteredProjection.snapshot.costs, policy).decision).toBe("BLOCK");
+    expect(JSON.stringify(meteredProjection.snapshot)).not.toContain("artifact://private-input");
+
+    // Even a typed runtime-shaped receipt must fail closed if its immutable
+    // total and trace coverage disagree (e.g. a corrupt persisted receipt).
+    const inconsistentReceipt = {
+      ...meteredReceipt,
+      totals: { ...meteredReceipt.totals, externalCalls: 2 },
+    };
+    expect(projectRecordedRuntimeReceipt(
+      inconsistentReceipt, executable.budget.maxCostUnits,
+    ).snapshot.costs[0].actualUsd.state).toBe("UNKNOWN");
+  });
+
+
+  it("shows adapter-reported provider charges from real run trace and leaves other costs UNKNOWN", () => {
+    const projection = projectRuntimeReceipt({
+      runId: "real-run-adapter-channel",
+      graphId: "g1",
+      runtimeMs: 10,
+      processedSignals: 2,
+      costUnits: 4,
+      maxCostUnits: 8,
+      status: "completed",
+      terminationCode: "COMPLETED",
+      totalExternalCalls: 2,
+      providerTrace: [
+        { traceId: "trace-1", externalCalls: 1,
+          providerMeter: { amountUsd: 0.017, source: "provider-usage", receiptId: "bill-1" } },
+        { traceId: "trace-1", externalCalls: 1,
+          providerMeter: { amountUsd: 0.003, source: "provider-usage", receiptId: "bill-2" } },
+      ],
+    });
+    expect(projection.snapshot.costs[0].actualUsd).toEqual(
+      known(0.02, "obs.v1:adapter-reported-provider-meter-receipts"),
+    );
+    expect(projection.snapshot.costs.slice(1).every((line) => line.actualUsd.state === "UNKNOWN"))
+      .toBe(true);
+    // A provider subtotal is not a whole-run cost: the overall budget stays fail-closed.
+    expect(evaluateBudget(projection.snapshot.costs, policy).decision).toBe("BLOCK");
+  });
+
+  it("rejects partial/duplicate/invalid provider meter receipts, not inventing actual USD", () => {
+    const common = {
+      runId: "unknown-meter",
+      graphId: "g1",
+      runtimeMs: 10,
+      processedSignals: 2,
+      costUnits: 4,
+      maxCostUnits: 8,
+      status: "completed" as const,
+      terminationCode: "COMPLETED",
+      totalExternalCalls: 2,
+    };
+    const good = { traceId: "trace-1", externalCalls: 1,
+      providerMeter: { amountUsd: 0.01, receiptId: "bill-1", source: "provider" } };
+    const trials = [
+      [good, { traceId: "trace-1", externalCalls: 1 }],
+      [good, { ...good }],
+      [{ ...good, providerMeter: { ...good.providerMeter, amountUsd: -1 } }],
+    ];
+    for (const providerTrace of trials) {
+      const result = projectRuntimeReceipt({ ...common, providerTrace });
+      expect(result.snapshot.costs[0].actualUsd.state).toBe("UNKNOWN");
+    }
+  });
+
+  it("keeps provider USD UNKNOWN for omitted trace events and unbound runtime call totals", () => {
+    const base = {
+      runId: "coverage-guard",
+      graphId: "g1",
+      runtimeMs: 10,
+      processedSignals: 2,
+      costUnits: 4,
+      maxCostUnits: 8,
+      status: "completed" as const,
+      terminationCode: "COMPLETED",
+    };
+    const metered = {
+      traceId: "trace-1",
+      externalCalls: 1,
+      providerMeter: { amountUsd: 0.01, receiptId: "bill-1", source: "provider" },
+    };
+    const incomplete = [
+      { providerTrace: [metered] }, // No independent run total.
+      { totalExternalCalls: 2, providerTrace: [metered] }, // One call omitted.
+      { totalExternalCalls: 1, providerTrace: [{ ...metered, externalCalls: 2 }] },
+      { totalExternalCalls: 1, providerTrace: [{ ...metered, externalCalls: 0 }] },
+      { totalExternalCalls: 1, providerTrace: [{ ...metered, externalCalls: 0.5 }] },
+      { totalExternalCalls: Number.NaN, providerTrace: [metered] },
+      { totalExternalCalls: 1, providerTrace: [
+        metered,
+        { ...metered, providerMeter: { ...metered.providerMeter, receiptId: "bill-2" } },
+      ] },
+    ];
+    for (const partial of incomplete) {
+      expect(projectRuntimeReceipt({ ...base, ...partial }).snapshot.costs[0].actualUsd.state)
+        .toBe("UNKNOWN");
+    }
   });
 
   it("rejects invalid KNOWN USD rather than trusting it or silently using estimates", () => {

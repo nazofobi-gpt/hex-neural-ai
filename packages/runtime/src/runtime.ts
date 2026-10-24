@@ -104,16 +104,18 @@ function chooseBinding(
   );
 }
 
-function validAdapterMetric(value: unknown): boolean {
+function validAdapterMetric(value: unknown, requireSafeInteger = false): boolean {
   return value === undefined ||
-    (typeof value === "number" && Number.isFinite(value) && value >= 0);
+    (typeof value === "number" && Number.isFinite(value) && value >= 0 &&
+      (!requireSafeInteger || Number.isSafeInteger(value)));
 }
 
 function normalizedAdapterResult(
   result: RuntimeAdapterResult,
   signal: RuntimeSignal,
-): Required<Omit<RuntimeAdapterResult, "artifact">> & {
+): Required<Omit<RuntimeAdapterResult, "artifact" | "providerMeter">> & {
   artifact: RuntimeAdapterResult["artifact"];
+  providerMeter: RuntimeAdapterResult["providerMeter"];
 } {
   return {
     payloadRef:
@@ -124,6 +126,7 @@ function normalizedAdapterResult(
     externalCalls: Math.max(0, result.externalCalls ?? 0),
     costUnits: Math.max(0, result.costUnits ?? 0),
     durationMs: Math.max(0, result.durationMs ?? 0),
+    providerMeter: result.providerMeter === undefined ? undefined : { ...result.providerMeter },
     artifact: result.artifact ?? null,
   };
 }
@@ -226,6 +229,9 @@ export function runExecutableGraph(
 
   const queue: RuntimeSignal[] = [initialSignal];
   const trace: RuntimeTraceEvent[] = [];
+  // Provider billing receipt IDs must be unique within a run. A repeated
+  // receipt cannot represent a second independently billed external call.
+  const seenProviderReceipts = new Set<string>();
   const checkpoints: RunCheckpoint[] = [];
   const artifacts: RuntimeArtifactReceipt[] = [];
   const outputs: RuntimeSignal[] = [];
@@ -310,14 +316,14 @@ export function runExecutableGraph(
         seed: executable.seed,
         sequence,
       });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
+    } catch {
+      // Never inspect or stringify adapter-thrown values: Error.message,
+      // toString and coercion hooks can disclose secrets or execute code.
       return finalize(
         options,
         executable,
         "ADAPTER_FAILED",
-        `Adapter ${adapter.id} failed at node ${node.id}: ${message}`,
+        "Runtime adapter execution failed; details withheld from run receipts.",
         trace,
         checkpoints,
         artifacts,
@@ -327,7 +333,7 @@ export function runExecutableGraph(
     }
 
     const invalidMetric = (["durationMs", "externalCalls", "costUnits"] as const)
-      .find((key) => !validAdapterMetric(rawResult[key]));
+      .find((key) => !validAdapterMetric(rawResult[key], key === "externalCalls"));
     if (invalidMetric !== undefined) {
       return finalize(
         options,
@@ -342,11 +348,32 @@ export function runExecutableGraph(
       );
     }
 
+    // Metered USD must come from a concrete external adapter billing receipt.
+    // costUnits are not currency; a missing receipt remains UNKNOWN downstream.
+    if (rawResult.providerMeter !== undefined) {
+      const meter = rawResult.providerMeter;
+      const valid = meter !== null && typeof meter === "object" &&
+        typeof meter.amountUsd === "number" &&
+        Number.isFinite(meter.amountUsd) && meter.amountUsd >= 0 &&
+        typeof meter.receiptId === "string" && meter.receiptId.trim().length > 0 &&
+        typeof meter.source === "string" && meter.source.trim().length > 0 &&
+        rawResult.externalCalls === 1 &&
+        !seenProviderReceipts.has(meter.receiptId);
+      if (!valid) {
+        return finalize(
+          options, executable, "ADAPTER_FAILED",
+          `Adapter ${adapter.id} returned invalid providerMeter at node ${node.id}.`,
+          trace, checkpoints, artifacts, outputs, totals,
+        );
+      }
+    }
+
     const result = normalizedAdapterResult(rawResult, signal);
     const nextRuntimeMs = totals.runtimeMs + result.durationMs;
     const nextExternalCalls = totals.externalCalls + result.externalCalls;
     const nextCostUnits = totals.costUnits + result.costUnits;
-    if (![nextRuntimeMs, nextExternalCalls, nextCostUnits].every(Number.isFinite)) {
+    if (![nextRuntimeMs, nextCostUnits].every(Number.isFinite) ||
+        !Number.isSafeInteger(nextExternalCalls)) {
       return finalize(
         options,
         executable,
@@ -358,6 +385,10 @@ export function runExecutableGraph(
         outputs,
         totals,
       );
+    }
+
+    if (result.providerMeter !== undefined) {
+      seenProviderReceipts.add(result.providerMeter.receiptId);
     }
 
     totals.processedSignals += 1;
@@ -385,6 +416,7 @@ export function runExecutableGraph(
       durationMs: result.durationMs,
       externalCalls: result.externalCalls,
       costUnits: result.costUnits,
+      ...(result.providerMeter === undefined ? {} : { providerMeter: { ...result.providerMeter } }),
     });
 
     checkpoints.push(
