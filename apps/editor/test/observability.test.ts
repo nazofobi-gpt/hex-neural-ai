@@ -194,6 +194,45 @@ describe("obs.v1 telemetry semantics", () => {
     }).attributes.deep).toEqual(sanitized.deep);
   });
 
+  it("never executes getters on untrusted root log records", () => {
+    let getterCalls = 0;
+    const root = Object.defineProperties({}, {
+      id: { enumerable: true, get() { getterCalls += 1; return "log-secret"; } },
+      level: { enumerable: true, value: "info" },
+      message: { enumerable: true, get() { getterCalls += 1; return "Bearer never-read"; } },
+      attributes: { enumerable: true, get() { getterCalls += 1; return { token: "secret" }; } },
+    }) as Parameters<typeof sanitizeLogEntry>[0];
+    expect(sanitizeLogEntry(root)).toEqual({
+      id: "[REDACTED]",
+      level: "info",
+      message: "[REDACTED]",
+      attributes: { _telemetry: "[REDACTED]" },
+    });
+    expect(getterCalls).toBe(0);
+
+    const revoked = Proxy.revocable({
+      id: "log", level: "info" as const, message: "ok", attributes: {},
+    }, {});
+    revoked.revoke();
+    expect(sanitizeLogEntry(revoked.proxy)).toEqual({
+      id: "[REDACTED]", level: "warn", message: "[REDACTED]",
+      attributes: { _telemetry: "[REDACTED]" },
+    });
+  });
+
+  it("redacts sensitive and oversized root log metadata before display", () => {
+    const sanitized = sanitizeLogEntry({
+      id: "Bearer abcdef123456",
+      level: "warn",
+      message: "x".repeat(8193),
+      attributes: { safe: "ok" },
+    });
+    expect(sanitized).toEqual({
+      id: "[REDACTED]", level: "warn", message: "[REDACTED]",
+      attributes: { safe: "ok" },
+    });
+  });
+
   it("bounds large-log rendering windows and sanitizes returned entries", () => {
     const entries = Array.from({ length: 500 }, (_, index) => ({
       id: `log-${index}`,
