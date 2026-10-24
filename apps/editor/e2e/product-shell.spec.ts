@@ -58,6 +58,7 @@ test("capability connection previews permissions and rejects inline credentials"
   await page.getByRole("button", { name: "Capabilities", exact: true }).click();
   await expect(page.getByText("documents:read", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Capability catalog" })).toContainText("Local runtime");
+  await expect(page.getByRole("region", { name: "Local runtime discovery" })).toContainText("2 rejected safely");
   await page.getByRole("button", { name: "Test connection" }).click();
   await expect(page.getByRole("status")).toContainText("Connection healthy");
 
