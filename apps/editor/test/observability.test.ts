@@ -6,6 +6,7 @@ import {
   evaluateBudget,
   known,
   projectRuntimeReceipt,
+  projectRecordedRuntimeReceipt,
   redactTelemetry,
   unknown,
   virtualizeLogWindow,
@@ -187,21 +188,11 @@ describe("obs.v1 telemetry semantics", () => {
 
     expect(receipt.termination.code).toBe("MAX_COST_EXCEEDED");
 
-    const projection = projectRuntimeReceipt({
-      runId: receipt.runId,
-      graphId: receipt.graphId,
-      checkpointId: receipt.checkpoints.at(-1)?.id,
-      clusterId: "cluster-1",
-      replicaId: "local-1",
-      generationId: "2",
-      messageId: "m-1",
-      runtimeMs: receipt.totals.runtimeMs,
-      processedSignals: receipt.totals.processedSignals,
-      costUnits: receipt.totals.costUnits,
-      maxCostUnits: executable.budget.maxCostUnits,
-      status: receipt.status,
-      terminationCode: receipt.termination.code,
-    });
+    const projection = projectRecordedRuntimeReceipt(
+      receipt,
+      executable.budget.maxCostUnits,
+      { clusterId: "cluster-1", replicaId: "local-1", generationId: "2", messageId: "m-1" },
+    );
 
     expect(projection.runtimeBudget).toEqual({
       measuredCostUnits: 2,
@@ -225,6 +216,57 @@ describe("obs.v1 telemetry semantics", () => {
       reason: "COST_UNKNOWN",
     });
     expect(JSON.stringify(projection.snapshot)).not.toContain("artifact://private-input");
+
+
+    // This second run uses the real G-200 runtime to produce a metered trace.
+    // The projection must derive the denominator from receipt.totals.externalCalls.
+    const meteredReceipt = runExecutableGraph(executable, {
+      runId: "runtime-provider-meter-proof",
+      startedAt: "2026-10-07T14:00:00+02:00",
+      completedAt: "2026-10-07T14:00:01+02:00",
+      initialPayloadRef: "artifact://private-input",
+      initialSchema: null,
+      traceId: "trace-runtime-meter",
+      adapters: {
+        byNodeId: {
+          tool: {
+            id: "tool.provider-metered",
+            execute: () => ({
+              externalCalls: 1,
+              costUnits: 2,
+              durationMs: 4,
+              providerMeter: {
+                amountUsd: 0.017,
+                receiptId: "fixture-bill-17",
+                source: "fixture-provider-usage",
+              },
+            }),
+          },
+        },
+      },
+    });
+    expect(meteredReceipt.totals.externalCalls).toBe(1);
+    const meteredProjection = projectRecordedRuntimeReceipt(
+      meteredReceipt,
+      executable.budget.maxCostUnits,
+    );
+    expect(meteredProjection.snapshot.costs[0].actualUsd).toEqual(
+      known(0.017, "obs.v1:adapter-reported-provider-meter-receipts"),
+    );
+    expect(meteredProjection.snapshot.costs.slice(1).every((line) => line.actualUsd.state === "UNKNOWN"))
+      .toBe(true);
+    expect(evaluateBudget(meteredProjection.snapshot.costs, policy).decision).toBe("BLOCK");
+    expect(JSON.stringify(meteredProjection.snapshot)).not.toContain("artifact://private-input");
+
+    // Even a typed runtime-shaped receipt must fail closed if its immutable
+    // total and trace coverage disagree (e.g. a corrupt persisted receipt).
+    const inconsistentReceipt = {
+      ...meteredReceipt,
+      totals: { ...meteredReceipt.totals, externalCalls: 2 },
+    };
+    expect(projectRecordedRuntimeReceipt(
+      inconsistentReceipt, executable.budget.maxCostUnits,
+    ).snapshot.costs[0].actualUsd.state).toBe("UNKNOWN");
   });
 
 
