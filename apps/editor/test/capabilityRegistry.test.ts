@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { disableCapability, discoverLocalRuntimes, recordHealth, registerCapability, rollbackCapability, selectFallback, verifyAndEnableCapability } from "../src/capabilityRegistry";
+import { disableCapability, discoverLocalRuntimes, recordHealth, registerCapability, rollbackCapability, selectFallback, stageCapabilityForVerification, verifyAndEnableCapability } from "../src/capabilityRegistry";
 
 const base = { id: "research-mcp", label: "Research MCP", kind: "mcp" as const, protocol: "mcp-2026-07-28", credentialRef: "vault://workspace/research-mcp", permissions: [{ scope: "documents:read", access: "read" as const }] };
 const healthy = { authenticated: true, schemaCompatible: true, grantedScopes: ["documents:read"], checkedAt: "2026-10-04T09:48:00.000Z" };
 
 describe("capability registry", () => {
+  it("keeps a preview connection unverified without a provider handshake", () => {
+    const staged = stageCapabilityForVerification(base);
+    expect(staged).toMatchObject({
+      state: "draft",
+      checkedAt: null,
+      reason: expect.stringContaining("not been verified"),
+    });
+    expect(selectFallback([staged], "documents:read")).toBeNull();
+    const secret = "sk-test-MUST-NOT-PERSIST";
+    const rejected = stageCapabilityForVerification({ ...base, credentialRef: secret });
+    expect(rejected).toMatchObject({ state: "quarantined", credentialRef: null });
+    expect(JSON.stringify(rejected)).not.toContain(secret);
+    expect(stageCapabilityForVerification({ ...base, protocol: "unrecognized" }).state).toBe("quarantined");
+  });
+
   it("registers a compatible connection using only a secret reference", () => {
     expect(registerCapability(base, healthy)).toMatchObject({ state: "ready", credentialRef: "vault://workspace/research-mcp" });
   });
