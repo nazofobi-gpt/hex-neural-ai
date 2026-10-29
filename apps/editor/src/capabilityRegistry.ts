@@ -151,7 +151,25 @@ function isLocalRuntimeEndpoint(endpoint: string): boolean {
 export function discoverLocalRuntimes(candidates: LocalRuntimeCandidate[]): DiscoveryResult {
   const accepted: ConnectionInput[] = [];
   const rejected: DiscoveryResult["rejected"] = [];
+  // Treat the full discovery batch as untrusted. Never select an arbitrary winner
+  // when different records claim the same runtime ID or local endpoint.
+  const idCounts = new Map<string, number>();
+  const endpointCounts = new Map<string, number>();
+  const endpointKey = (endpoint: string): string => {
+    try { return new URL(endpoint).href; } catch { return endpoint; }
+  };
   for (const candidate of candidates) {
+    const id = candidate.id.trim();
+    const endpoint = endpointKey(candidate.endpoint);
+    idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+    endpointCounts.set(endpoint, (endpointCounts.get(endpoint) ?? 0) + 1);
+  }
+  for (const candidate of candidates) {
+    const id = candidate.id.trim();
+    if (!id || (idCounts.get(id) ?? 0) !== 1 || (endpointCounts.get(endpointKey(candidate.endpoint)) ?? 0) !== 1) {
+      rejected.push({ id: candidate.id, reason: "Ambiguous or empty runtime identity/endpoint; import rejected." });
+      continue;
+    }
     const localEndpoint = isLocalRuntimeEndpoint(candidate.endpoint);
     if (!localEndpoint) { rejected.push({ id: candidate.id, reason: "Remote endpoints cannot be imported by local discovery." }); continue; }
     if (!candidate.signatureVerified) { rejected.push({ id: candidate.id, reason: "Runtime signature is unverified." }); continue; }
