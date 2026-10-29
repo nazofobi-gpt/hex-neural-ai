@@ -161,4 +161,24 @@ describe("capability registry", () => {
       cases.filter(([, , safe]) => !safe).map(([id]) => id).sort(),
     );
   });
+
+  it("rejects all duplicate runtime identities and canonical endpoint aliases", () => {
+    const candidate = (id: string, endpoint: string) => ({
+      id, label: id, endpoint, compatibility: ["text"], license: "MIT", signatureVerified: true,
+    });
+    const result = discoverLocalRuntimes([
+      candidate("same-id", "http://127.0.0.1:11434"),
+      candidate("same-id", "http://localhost:9000"),
+      candidate("endpoint-a", "http://127.0.0.1:80"),
+      candidate("endpoint-b", "http://127.0.0.1/"),
+      candidate("  ", "unix:///tmp/empty-id.sock"),
+      candidate("unique", "unix:///tmp/unique.sock"),
+    ]);
+    expect(result.accepted.map(({ id }) => id)).toEqual(["unique"]);
+    expect(result.rejected.map(({ id }) => id).sort()).toEqual([
+      "same-id", "same-id", "endpoint-a", "endpoint-b", "  ",
+    ].sort());
+    expect(result.rejected.every(({ reason }) => reason.includes("Ambiguous or empty"))).toBe(true);
+  });
+
 });
