@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { HexCanvas } from "./HexCanvas";
-import { registerCapability, type CapabilityRecord } from "./capabilityRegistry";
+import { stageCapabilityForVerification, type CapabilityRecord } from "./capabilityRegistry";
 import "./capability.css";
 
 type View = "Home" | "Projects" | "Capabilities" | "Recents" | "Starred" | "Templates" | "Activity" | "Builder";
@@ -24,19 +24,16 @@ export function App() {
   const [capability, setCapability] = useState<CapabilityRecord | null>(null);
   const [credentialRef, setCredentialRef] = useState("vault://workspace/research-mcp");
 
-  const testConnection = () => {
-    setCapability(registerCapability({
+  const checkConnectionConfiguration = () => {
+    // The preview has no authenticated provider adapter. Configuration-only
+    // validation must never synthesize a healthy provider response.
+    setCapability(stageCapabilityForVerification({
       id: "research-mcp",
       label: "Research MCP",
       kind: "mcp",
       protocol: "mcp-2026-07-28",
       credentialRef,
       permissions: [{ scope: "documents:read", access: "read" }],
-    }, {
-      authenticated: !new URLSearchParams(window.location.search).has("mockAuthError"),
-      schemaCompatible: true,
-      grantedScopes: ["documents:read"],
-      checkedAt: new Date().toISOString(),
     }));
   };
 
@@ -188,20 +185,20 @@ export function App() {
               <span className="state-badge">{capability?.state ?? "not tested"}</span>
             </section>
             <section className="connection-card" aria-labelledby="connection-title">
-              <div><p className="eyebrow">MCP connection</p><h3 id="connection-title">Research MCP</h3><p>Protocol: MCP 2026-07-28 · Health checks are read-only.</p></div>
+              <div><p className="eyebrow">MCP connection</p><h3 id="connection-title">Research MCP</h3><p>Protocol: MCP 2026-07-28 · This preview validates configuration only; live auth, schema and scopes remain unverified.</p></div>
               <label htmlFor="credential-ref">Credential vault reference</label>
               <input id="credential-ref" value={credentialRef} onChange={(event) => setCredentialRef(event.target.value)} />
               <div className="permission-preview"><strong>Permission preview</strong><span>documents:read</span><small>No write or external side-effect permission requested.</small></div>
-              <button className="primary" onClick={testConnection}>Test connection</button>
+              <button className="primary" onClick={checkConnectionConfiguration}>Check configuration</button>
               {capability && <p role={capability.state === "ready" ? "status" : "alert"} className={capability.state === "ready" ? "success" : "error"}>{capability.state === "ready" ? "Connection healthy. Secret material was not stored in project configuration." : capability.reason}</p>}
             </section>
             <section className="catalog" aria-label="Capability catalog">
-              <article><div><strong>Local runtime</strong><span className="state-badge">ready</span></div><p>local-runtime · local · MIT</p><small>Compatibility: text, embeddings · priority 10</small></article>
+              <article><div><strong>Local runtime</strong><span className="state-badge">not verified</span></div><p>local-runtime · local · MIT</p><small>Compatibility: text, embeddings · priority 10</small></article>
               <article><div><strong>Research MCP</strong><span className="state-badge">{capability?.state ?? "not tested"}</span></div><p>MCP 2026-07-28 · remote · provider terms</p><small>Fallback priority 20 · documents:read only</small></article>
             </section>
             <section className="discovery" aria-label="Local runtime discovery">
-              <div><p className="eyebrow">Local discovery</p><h3>1 verified runtime ready to import</h3><p>Loopback Runtime · 127.0.0.1 · signature verified · execution permission shown before import.</p></div>
-              <div className="discovery-result"><strong>2 rejected safely</strong><small>Remote endpoint and unsigned runtime were not imported.</small></div>
+              <div><p className="eyebrow">Local discovery</p><h3>Local discovery preview — no runtime verified</h3><p>Loopback example only; runtime identity, signature and execution permission have not been checked.</p></div>
+              <div className="discovery-result"><strong>0 runtimes imported</strong><small>No live discovery probe has been performed.</small></div>
             </section>
           </div>
         )}
