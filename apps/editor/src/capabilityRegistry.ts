@@ -17,6 +17,18 @@ export interface DiscoveryResult { accepted: ConnectionInput[]; rejected: Array<
 const credentialReference = /^(vault|secret):\/\/[a-z0-9][a-z0-9/_-]*$/i;
 const supportedProtocols = new Set(["mcp-2025-11-25", "mcp-2026-07-28", "openai-compatible", "local-runtime"]);
 
+/** Local form validation is not a provider handshake. Never promote a preview connection. */
+export function stageCapabilityForVerification(input: ConnectionInput): CapabilityRecord {
+  if (!supportedProtocols.has(input.protocol)) {
+    return initial(input, "quarantined", `Unsupported protocol: ${input.protocol}`);
+  }
+  const credentialRef = input.credentialRef?.trim() || null;
+  if (credentialRef && !credentialReference.test(credentialRef)) {
+    return initial(input, "quarantined", "Credentials must be stored as vault references, never inline values.");
+  }
+  return initial(input, "draft", "Live provider authentication, schema and granted scopes have not been verified.");
+}
+
 export function registerCapability(input: ConnectionInput, probe: ConnectionProbe): CapabilityRecord {
   if (!supportedProtocols.has(input.protocol)) return initial(input, "quarantined", `Unsupported protocol: ${input.protocol}`);
   const credentialRef = input.credentialRef?.trim() || null;
