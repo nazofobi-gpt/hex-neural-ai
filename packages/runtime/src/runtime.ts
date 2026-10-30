@@ -110,6 +110,74 @@ function validAdapterMetric(value: unknown, requireSafeInteger = false): boolean
       (!requireSafeInteger || Number.isSafeInteger(value)));
 }
 
+/**
+ * Never trust adapter-supplied object accessors. Snapshot only own data
+ * properties before using the result in billing, traces or run receipts.
+ * This also rejects throwing Proxy descriptor traps without exposing errors.
+ */
+function snapshotAdapterResult(value: RuntimeAdapterResult): RuntimeAdapterResult {
+  function ownData(object: object, key: string): unknown {
+    const descriptor = Object.getOwnPropertyDescriptor(object, key);
+    if (descriptor === undefined) return undefined;
+    if (!Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+      throw new Error("Adapter result contains an accessor property.");
+    }
+    return descriptor.value;
+  }
+  function plainRecord(value: unknown): value is Record<string, unknown> {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+  if (!plainRecord(value)) throw new Error("Invalid adapter result.");
+  const meter = ownData(value, "providerMeter");
+  const artifact = ownData(value, "artifact");
+  if (meter !== undefined && !plainRecord(meter)) {
+    throw new Error("Invalid adapter meter.");
+  }
+  if (artifact !== undefined && artifact !== null && !plainRecord(artifact)) {
+    throw new Error("Invalid adapter artifact.");
+  }
+  const metadata = artifact && plainRecord(artifact) ? ownData(artifact, "metadata") : undefined;
+  if (metadata !== undefined && !plainRecord(metadata)) {
+    throw new Error("Invalid adapter artifact metadata.");
+  }
+  // Snapshot metadata keys too: a returned accessor must not run during
+  // later JSON receipt serialization. Nested values are still opaque data.
+  const safeMetadata: Record<string, unknown> = {};
+  if (metadata && plainRecord(metadata)) {
+    for (const key of Object.keys(metadata)) {
+      Object.defineProperty(safeMetadata, key, {
+        value: ownData(metadata, key), writable: true, enumerable: true, configurable: true,
+      });
+    }
+  }
+  return {
+    payloadRef: ownData(value, "payloadRef") as RuntimeAdapterResult["payloadRef"],
+    schema: ownData(value, "schema") as RuntimeAdapterResult["schema"],
+    durationMs: ownData(value, "durationMs") as number | undefined,
+    externalCalls: ownData(value, "externalCalls") as number | undefined,
+    costUnits: ownData(value, "costUnits") as number | undefined,
+    ...(meter === undefined ? {} : {
+      providerMeter: {
+        amountUsd: ownData(meter as object, "amountUsd") as number,
+        receiptId: ownData(meter as object, "receiptId") as string,
+        source: ownData(meter as object, "source") as string,
+      },
+    }),
+    ...(artifact === undefined ? {} : {
+      artifact: artifact === null ? null : {
+        id: ownData(artifact as object, "id") as string,
+        mimeType: ownData(artifact as object, "mimeType") as string,
+        storageRef: ownData(artifact as object, "storageRef") as string,
+        sizeBytes: ownData(artifact as object, "sizeBytes") as number | null | undefined,
+        hash: ownData(artifact as object, "hash") as string | null | undefined,
+        ...(metadata === undefined ? {} : { metadata: safeMetadata }),
+      },
+    }),
+  };
+}
+
 function normalizedAdapterResult(
   result: RuntimeAdapterResult,
   signal: RuntimeSignal,
@@ -310,12 +378,12 @@ export function runExecutableGraph(
 
     let rawResult: RuntimeAdapterResult;
     try {
-      rawResult = adapter.execute({
+      rawResult = snapshotAdapterResult(adapter.execute({
         node,
         signal: { ...signal },
         seed: executable.seed,
         sequence,
-      });
+      }));
     } catch {
       // Never inspect or stringify adapter-thrown values: Error.message,
       // toString and coercion hooks can disclose secrets or execute code.
