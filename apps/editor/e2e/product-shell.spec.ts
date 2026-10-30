@@ -58,17 +58,19 @@ test("capability connection previews permissions and rejects inline credentials"
   await page.getByRole("button", { name: "Capabilities", exact: true }).click();
   await expect(page.getByText("documents:read", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Capability catalog" })).toContainText("Local runtime");
-  await page.getByRole("button", { name: "Test connection" }).click();
-  await expect(page.getByRole("status")).toContainText("Connection healthy");
+  await expect(page.getByRole("region", { name: "Local runtime discovery" })).toContainText("0 runtimes imported");
+  await page.getByRole("button", { name: "Check configuration" }).click();
+  await expect(page.getByRole("alert")).toContainText("have not been verified");
+  await expect(page.getByRole("region", { name: "Capability catalog" })).not.toContainText("ready");
 
   await page.getByLabel("Credential vault reference").fill("inline-secret");
-  await page.getByRole("button", { name: "Test connection" }).click();
+  await page.getByRole("button", { name: "Check configuration" }).click();
   await expect(page.getByRole("alert")).toContainText("vault references");
 });
 
-test("authentication failure offers typed reconnect remediation", async ({ page }) => {
+test("mock authentication query cannot make an unverified connection ready", async ({ page }) => {
   await createWorkspace(page, "/?mockAuthError=1");
   await page.getByRole("button", { name: "Capabilities", exact: true }).click();
-  await page.getByRole("button", { name: "Test connection" }).click();
-  await expect(page.getByRole("alert")).toContainText("Reconnect");
+  await page.getByRole("button", { name: "Check configuration" }).click();
+  await expect(page.getByRole("alert")).toContainText("have not been verified");
 });
