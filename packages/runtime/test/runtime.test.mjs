@@ -601,3 +601,54 @@ test("adapter exception payloads never leak into run receipts or execute thrown-
   }
   assert.equal(inspected, 0);
 });
+
+test("returned adapter accessors, hostile proxies and malformed billing objects fail closed", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const secret = "sensitive-returned-adapter-value";
+  let accessorReads = 0;
+  const hostileGetter = () => {
+    accessorReads += 1;
+    throw new Error(secret);
+  };
+  const withGetter = (base, key) =>
+    Object.defineProperty(base, key, { enumerable: true, get: hostileGetter });
+
+  const returned = [
+    null,
+    withGetter({ externalCalls: 1 }, "costUnits"),
+    withGetter({ externalCalls: 1 }, "providerMeter"),
+    { externalCalls: 1, providerMeter: withGetter({
+      receiptId: "fake-receipt", source: "fixture",
+    }, "amountUsd") },
+    { artifact: withGetter({
+      id: "artifact", mimeType: "application/json", storageRef: "artifact://safe",
+    }, "storageRef") },
+    { artifact: {
+      id: "artifact", mimeType: "application/json", storageRef: "artifact://safe",
+      metadata: withGetter({}, "privateToken"),
+    } },
+    new Proxy({}, {
+      getOwnPropertyDescriptor: () => { throw new Error(secret); },
+    }),
+    new Proxy({}, {
+      getPrototypeOf: () => { throw new Error(secret); },
+    }),
+  ];
+  for (const [index, result] of returned.entries()) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => result;
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions(`hostile-adapter-return-${index}`),
+      adapters: fixture,
+    });
+    assert.equal(receipt.status, "terminated");
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.termination.message,
+      "Runtime adapter execution failed; details withheld from run receipts.");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+    assert.ok(!serializeRunReceipt(receipt).includes(secret));
+  }
+  assert.equal(accessorReads, 0);
+});
