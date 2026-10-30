@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { HexCanvas } from "./HexCanvas";
 import { registerCapability, type CapabilityRecord } from "./capabilityRegistry";
+import { FLEDGE_ALPHA_PREVIEW } from "./modelCatalog";
 import "./capability.css";
 
 type View = "Home" | "Projects" | "Capabilities" | "Recents" | "Starred" | "Templates" | "Activity" | "Builder";
@@ -198,6 +199,11 @@ export function App() {
             <section className="catalog" aria-label="Capability catalog">
               <article><div><strong>Local runtime</strong><span className="state-badge">ready</span></div><p>local-runtime · local · MIT</p><small>Compatibility: text, embeddings · priority 10</small></article>
               <article><div><strong>Research MCP</strong><span className="state-badge">{capability?.state ?? "not tested"}</span></div><p>MCP 2026-07-28 · remote · provider terms</p><small>Fallback priority 20 · documents:read only</small></article>
+              <article>
+                <div><strong>{FLEDGE_ALPHA_PREVIEW.connection.label}</strong><span className="state-badge">experimental</span></div>
+                <p>OpenCode preview · {FLEDGE_ALPHA_PREVIEW.backendIdentity} backend · live probe required</p>
+                <small>Public/synthetic only · production-critical denied · deterministic fallback required</small>
+              </article>
             </section>
             <section className="discovery" aria-label="Local runtime discovery">
               <div><p className="eyebrow">Local discovery</p><h3>1 verified runtime ready to import</h3><p>Loopback Runtime · 127.0.0.1 · signature verified · execution permission shown before import.</p></div>
