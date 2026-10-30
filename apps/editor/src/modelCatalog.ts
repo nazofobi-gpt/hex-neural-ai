@@ -5,6 +5,15 @@ export type ModelDataClass = "public" | "synthetic" | "internal" | "confidential
 // Experimental profiles are display metadata, not authority to broaden data access.
 const EXPERIMENTAL_SAFE_DATA_CLASSES: ReadonlySet<ModelDataClass> = new Set(["public", "synthetic"]);
 
+// This preview's catalog identity is pinned locally; caller-supplied probe flags
+// alone must never authorize a different remote provider, model or endpoint.
+const TRUSTED_FLEDGE_IDENTITY = Object.freeze({
+  provider: "opencode",
+  modelId: "fledge-alpha-free",
+  candidateApiBase: "https://opencode.ai/zen/v1",
+  connectionId: "opencode/fledge-alpha-free",
+});
+
 export interface ExperimentalModelProfile {
   connection: ConnectionInput;
   provider: string;
@@ -78,6 +87,16 @@ export function evaluateExperimentalModelUse(
     return { allowed: false, reason: "Experimental model safety invariants are malformed or overridden." };
   }
   const connection = profile.connection;
+  // Catalog metadata is mutable at the call site; only the reviewed Fledge
+  // identity is permitted until another model receives an explicit binding.
+  if (
+    profile.provider !== TRUSTED_FLEDGE_IDENTITY.provider ||
+    profile.modelId !== TRUSTED_FLEDGE_IDENTITY.modelId ||
+    profile.candidateApiBase !== TRUSTED_FLEDGE_IDENTITY.candidateApiBase ||
+    connection?.id !== TRUSTED_FLEDGE_IDENTITY.connectionId
+  ) {
+    return { allowed: false, reason: "Experimental model identity/endpoint does not match the trusted catalog binding." };
+  }
   if (
     !connection ||
     connection.kind !== "model" ||

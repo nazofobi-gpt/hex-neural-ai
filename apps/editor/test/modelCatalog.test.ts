@@ -103,6 +103,27 @@ describe("experimental model catalog", () => {
     expect(evaluateExperimentalModelUse(noPermissions, safeGate).allowed).toBe(false);
   });
 
+  it("rejects caller-swapped provider/model/endpoint/connection identity despite passing probe flags", () => {
+    const spoofed: ExperimentalModelProfile[] = [
+      { ...FLEDGE_ALPHA_PREVIEW, provider: "untrusted-provider" },
+      { ...FLEDGE_ALPHA_PREVIEW, modelId: "untrusted-model" },
+      { ...FLEDGE_ALPHA_PREVIEW, candidateApiBase: "https://untrusted.example/v1" },
+      { ...FLEDGE_ALPHA_PREVIEW, candidateApiBase: "http://opencode.ai/zen/v1" },
+      { ...FLEDGE_ALPHA_PREVIEW, candidateApiBase: "https://opencode.ai/zen/v1/other" },
+      { ...FLEDGE_ALPHA_PREVIEW, connection: { ...FLEDGE_ALPHA_PREVIEW.connection, id: "untrusted/model" } },
+    ];
+    for (const profile of spoofed) {
+      expect(evaluateExperimentalModelUse(profile, safeGate)).toMatchObject({
+        allowed: false,
+        reason: expect.stringContaining("identity/endpoint"),
+      });
+    }
+    expect(evaluateExperimentalModelUse({
+      ...FLEDGE_ALPHA_PREVIEW,
+      connection: { ...FLEDGE_ALPHA_PREVIEW.connection },
+    }, safeGate).allowed).toBe(true);
+  });
+
   it("fails closed without live probe, current terms, schema compatibility, fallback or for production-critical work", () => {
     expect(evaluateExperimentalModelUse(FLEDGE_ALPHA_PREVIEW, { ...safeGate, liveProbePassed: false }).allowed).toBe(false);
     expect(evaluateExperimentalModelUse(FLEDGE_ALPHA_PREVIEW, { ...safeGate, termsVerified: false }).allowed).toBe(false);
