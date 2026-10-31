@@ -104,16 +104,116 @@ function chooseBinding(
   );
 }
 
-function validAdapterMetric(value: unknown): boolean {
+function validAdapterMetric(value: unknown, requireSafeInteger = false): boolean {
   return value === undefined ||
-    (typeof value === "number" && Number.isFinite(value) && value >= 0);
+    (typeof value === "number" && Number.isFinite(value) && value >= 0 &&
+      (!requireSafeInteger || Number.isSafeInteger(value)));
+}
+
+/**
+ * Never trust adapter-supplied object accessors. Snapshot only own data
+ * properties before using the result in billing, traces or run receipts.
+ * This also rejects throwing Proxy descriptor traps without exposing errors.
+ */
+function snapshotAdapterResult(value: RuntimeAdapterResult): RuntimeAdapterResult {
+  function ownData(object: object, key: string): unknown {
+    const descriptor = Object.getOwnPropertyDescriptor(object, key);
+    if (descriptor === undefined) return undefined;
+    if (!Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+      throw new Error("Adapter result contains an accessor property.");
+    }
+    return descriptor.value;
+  }
+  function plainRecord(value: unknown): value is Record<string, unknown> {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+  if (!plainRecord(value)) throw new Error("Invalid adapter result.");
+  const meter = ownData(value, "providerMeter");
+  const artifact = ownData(value, "artifact");
+  if (meter !== undefined && !plainRecord(meter)) {
+    throw new Error("Invalid adapter meter.");
+  }
+  if (artifact !== undefined && artifact !== null && !plainRecord(artifact)) {
+    throw new Error("Invalid adapter artifact.");
+  }
+  const metadata = artifact && plainRecord(artifact) ? ownData(artifact, "metadata") : undefined;
+  if (metadata !== undefined && !plainRecord(metadata)) {
+    throw new Error("Invalid adapter artifact metadata.");
+  }
+  // Clone nested JSON metadata before it reaches run receipt serialization.
+  // Do not invoke adapter-controlled getters, proxies or toJSON methods.
+  const visited = new WeakSet<object>();
+  let visitedNodes = 0;
+  function snapshotJson(value: unknown, depth = 0): unknown {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (value === undefined) return undefined;
+    if (typeof value !== "object" || depth >= 16 || ++visitedNodes > 2048) {
+      throw new Error("Unsafe adapter metadata value.");
+    }
+    if (visited.has(value)) throw new Error("Cyclic adapter metadata.");
+    visited.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const length = ownData(value, "length");
+        if (typeof length !== "number" || !Number.isSafeInteger(length) || length > 2048) {
+          throw new Error("Invalid adapter metadata array.");
+        }
+        const copy: unknown[] = [];
+        for (let index = 0; index < length; index += 1) {
+          copy.push(snapshotJson(ownData(value, String(index)), depth + 1));
+        }
+        return copy;
+      }
+      if (!plainRecord(value)) throw new Error("Invalid nested adapter metadata.");
+      const copy: Record<string, unknown> = {};
+      for (const key of Object.keys(value)) {
+        Object.defineProperty(copy, key, {
+          value: snapshotJson(ownData(value, key), depth + 1),
+          enumerable: true, writable: true, configurable: true,
+        });
+      }
+      return copy;
+    } finally {
+      visited.delete(value);
+    }
+  }
+  const safeMetadata: Record<string, unknown> = metadata === undefined
+    ? {} : snapshotJson(metadata) as Record<string, unknown>;
+  return {
+    payloadRef: ownData(value, "payloadRef") as RuntimeAdapterResult["payloadRef"],
+    schema: ownData(value, "schema") as RuntimeAdapterResult["schema"],
+    durationMs: ownData(value, "durationMs") as number | undefined,
+    externalCalls: ownData(value, "externalCalls") as number | undefined,
+    costUnits: ownData(value, "costUnits") as number | undefined,
+    ...(meter === undefined ? {} : {
+      providerMeter: {
+        amountUsd: ownData(meter as object, "amountUsd") as number,
+        receiptId: ownData(meter as object, "receiptId") as string,
+        source: ownData(meter as object, "source") as string,
+      },
+    }),
+    ...(artifact === undefined ? {} : {
+      artifact: artifact === null ? null : {
+        id: ownData(artifact as object, "id") as string,
+        mimeType: ownData(artifact as object, "mimeType") as string,
+        storageRef: ownData(artifact as object, "storageRef") as string,
+        sizeBytes: ownData(artifact as object, "sizeBytes") as number | null | undefined,
+        hash: ownData(artifact as object, "hash") as string | null | undefined,
+        ...(metadata === undefined ? {} : { metadata: safeMetadata }),
+      },
+    }),
+  };
 }
 
 function normalizedAdapterResult(
   result: RuntimeAdapterResult,
   signal: RuntimeSignal,
-): Required<Omit<RuntimeAdapterResult, "artifact">> & {
+): Required<Omit<RuntimeAdapterResult, "artifact" | "providerMeter">> & {
   artifact: RuntimeAdapterResult["artifact"];
+  providerMeter: RuntimeAdapterResult["providerMeter"];
 } {
   return {
     payloadRef:
@@ -124,6 +224,7 @@ function normalizedAdapterResult(
     externalCalls: Math.max(0, result.externalCalls ?? 0),
     costUnits: Math.max(0, result.costUnits ?? 0),
     durationMs: Math.max(0, result.durationMs ?? 0),
+    providerMeter: result.providerMeter === undefined ? undefined : { ...result.providerMeter },
     artifact: result.artifact ?? null,
   };
 }
@@ -226,6 +327,9 @@ export function runExecutableGraph(
 
   const queue: RuntimeSignal[] = [initialSignal];
   const trace: RuntimeTraceEvent[] = [];
+  // Provider billing receipt IDs must be unique within a run. A repeated
+  // receipt cannot represent a second independently billed external call.
+  const seenProviderReceipts = new Set<string>();
   const checkpoints: RunCheckpoint[] = [];
   const artifacts: RuntimeArtifactReceipt[] = [];
   const outputs: RuntimeSignal[] = [];
@@ -304,20 +408,20 @@ export function runExecutableGraph(
 
     let rawResult: RuntimeAdapterResult;
     try {
-      rawResult = adapter.execute({
+      rawResult = snapshotAdapterResult(adapter.execute({
         node,
         signal: { ...signal },
         seed: executable.seed,
         sequence,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
+      }));
+    } catch {
+      // Never inspect or stringify adapter-thrown values: Error.message,
+      // toString and coercion hooks can disclose secrets or execute code.
       return finalize(
         options,
         executable,
         "ADAPTER_FAILED",
-        `Adapter ${adapter.id} failed at node ${node.id}: ${message}`,
+        "Runtime adapter execution failed; details withheld from run receipts.",
         trace,
         checkpoints,
         artifacts,
@@ -327,7 +431,7 @@ export function runExecutableGraph(
     }
 
     const invalidMetric = (["durationMs", "externalCalls", "costUnits"] as const)
-      .find((key) => !validAdapterMetric(rawResult[key]));
+      .find((key) => !validAdapterMetric(rawResult[key], key === "externalCalls"));
     if (invalidMetric !== undefined) {
       return finalize(
         options,
@@ -342,11 +446,32 @@ export function runExecutableGraph(
       );
     }
 
+    // Metered USD must come from a concrete external adapter billing receipt.
+    // costUnits are not currency; a missing receipt remains UNKNOWN downstream.
+    if (rawResult.providerMeter !== undefined) {
+      const meter = rawResult.providerMeter;
+      const valid = meter !== null && typeof meter === "object" &&
+        typeof meter.amountUsd === "number" &&
+        Number.isFinite(meter.amountUsd) && meter.amountUsd >= 0 &&
+        typeof meter.receiptId === "string" && meter.receiptId.trim().length > 0 &&
+        typeof meter.source === "string" && meter.source.trim().length > 0 &&
+        rawResult.externalCalls === 1 &&
+        !seenProviderReceipts.has(meter.receiptId);
+      if (!valid) {
+        return finalize(
+          options, executable, "ADAPTER_FAILED",
+          `Adapter ${adapter.id} returned invalid providerMeter at node ${node.id}.`,
+          trace, checkpoints, artifacts, outputs, totals,
+        );
+      }
+    }
+
     const result = normalizedAdapterResult(rawResult, signal);
     const nextRuntimeMs = totals.runtimeMs + result.durationMs;
     const nextExternalCalls = totals.externalCalls + result.externalCalls;
     const nextCostUnits = totals.costUnits + result.costUnits;
-    if (![nextRuntimeMs, nextExternalCalls, nextCostUnits].every(Number.isFinite)) {
+    if (![nextRuntimeMs, nextCostUnits].every(Number.isFinite) ||
+        !Number.isSafeInteger(nextExternalCalls)) {
       return finalize(
         options,
         executable,
@@ -358,6 +483,10 @@ export function runExecutableGraph(
         outputs,
         totals,
       );
+    }
+
+    if (result.providerMeter !== undefined) {
+      seenProviderReceipts.add(result.providerMeter.receiptId);
     }
 
     totals.processedSignals += 1;
@@ -385,6 +514,7 @@ export function runExecutableGraph(
       durationMs: result.durationMs,
       externalCalls: result.externalCalls,
       costUnits: result.costUnits,
+      ...(result.providerMeter === undefined ? {} : { providerMeter: { ...result.providerMeter } }),
     });
 
     checkpoints.push(

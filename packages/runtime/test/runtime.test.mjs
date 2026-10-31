@@ -245,6 +245,122 @@ test("input -> transform -> tool -> evaluator -> output completes without SNN", 
   assert.equal(receipt.totals.costUnits, 2);
 });
 
+
+test("external adapter provider billing reference reaches the run trace without converting cost units", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const fixture = adapters();
+  fixture.byNodeId.tool.execute = () => ({
+    externalCalls: 1,
+    costUnits: 2,
+    durationMs: 1,
+    providerMeter: {
+      amountUsd: 0.017,
+      receiptId: "provider-bill-17",
+      source: "provider-usage-endpoint",
+    },
+  });
+  const receipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("actual-usd-meter-channel"),
+    adapters: fixture,
+  });
+  assert.equal(receipt.status, "completed");
+  assert.equal(receipt.totals.costUnits, 2);
+  assert.deepEqual(receipt.trace.find((e) => e.nodeId === "tool").providerMeter, {
+    amountUsd: 0.017,
+    receiptId: "provider-bill-17",
+    source: "provider-usage-endpoint",
+  });
+});
+
+test("runtime rejects fake or unbound provider money measurements", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const invalidMeters = [
+    { amountUsd: -1, receiptId: "r", source: "provider" },
+    { amountUsd: NaN, receiptId: "r", source: "provider" },
+    { amountUsd: 1, receiptId: "", source: "provider" },
+    { amountUsd: 1, receiptId: "r", source: "" },
+  ];
+  for (const providerMeter of invalidMeters) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => ({
+      externalCalls: 1,
+      costUnits: 2,
+      providerMeter,
+    });
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions("invalid-money-meter"),
+      adapters: fixture,
+    });
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.trace.find((e) => e.nodeId === "tool"), undefined);
+  }
+});
+
+test("rejects fractional or unsafe external-call counts before recording a trace", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  for (const calls of [0.5, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => ({ externalCalls: calls });
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions("invalid-call-count"),
+      adapters: fixture,
+    });
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+  }
+});
+
+test("rejects one USD receipt for multiple calls and duplicate receipt IDs", () => {
+  const compiled = compileGraph(chainGraph({ maxExternalCalls: 3 }), 42, policy());
+  assert.equal(compiled.ok, true);
+  const meter = { amountUsd: 0.017, receiptId: "bill-1", source: "fixture-provider" };
+  const bundled = adapters();
+  bundled.byNodeId.tool.execute = () => ({ externalCalls: 2, providerMeter: meter });
+  const bundledReceipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("bundled-meter"),
+    adapters: bundled,
+  });
+  assert.equal(bundledReceipt.termination.code, "ADAPTER_FAILED");
+  assert.equal(bundledReceipt.totals.externalCalls, 0);
+
+  const duplicate = adapters();
+  duplicate.byNodeId.transform.execute = () => ({ externalCalls: 1, providerMeter: meter });
+  duplicate.byNodeId.tool.execute = () => ({ externalCalls: 1, providerMeter: meter });
+  const duplicateReceipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("duplicate-meter"),
+    adapters: duplicate,
+  });
+  assert.equal(duplicateReceipt.termination.code, "ADAPTER_FAILED");
+  assert.deepEqual(duplicateReceipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+  assert.equal(duplicateReceipt.totals.externalCalls, 1);
+});
+
+test("distinct metered calls preserve separate provider receipt IDs", () => {
+  const compiled = compileGraph(chainGraph({ maxExternalCalls: 3 }), 42, policy());
+  assert.equal(compiled.ok, true);
+  const fixture = adapters();
+  fixture.byNodeId.transform.execute = () => ({
+    externalCalls: 1,
+    providerMeter: { amountUsd: 0.01, receiptId: "bill-1", source: "fixture-provider" },
+  });
+  fixture.byNodeId.tool.execute = () => ({
+    externalCalls: 1,
+    providerMeter: { amountUsd: 0.02, receiptId: "bill-2", source: "fixture-provider" },
+  });
+  const receipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("distinct-meters"),
+    adapters: fixture,
+  });
+  assert.equal(receipt.status, "completed");
+  assert.equal(receipt.totals.externalCalls, 2);
+  assert.deepEqual(receipt.trace.filter((event) => event.providerMeter)
+    .map((event) => event.providerMeter.receiptId), ["bill-1", "bill-2"]);
+});
+
 test("same graph version, seed and fixtures produce byte-identical replay receipts", () => {
   const compiledA = compileGraph(chainGraph(), 777, policy());
   const compiledB = compileGraph(chainGraph(), 777, policy());
@@ -447,4 +563,180 @@ test("reject non-finite and negative adapter budget metrics", () => {
       assert.deepEqual(deserializeRunReceipt(serializeRunReceipt(receipt)), receipt);
     }
   }
+});
+
+test("adapter exception payloads never leak into run receipts or execute thrown-object accessors", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const secret = "sk-private-adapter-exception-token";
+  let inspected = 0;
+  const hostile = new Error("hidden");
+  Object.defineProperty(hostile, "message", {
+    get() {
+      inspected += 1;
+      throw new Error(secret);
+    },
+  });
+  const cases = [new Error(secret), hostile, {
+    toString() {
+      inspected += 1;
+      throw new Error(secret);
+    },
+  }];
+
+  for (const [index, thrown] of cases.entries()) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => { throw thrown; };
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions(`adapter-exception-privacy-${index}`),
+      adapters: fixture,
+    });
+    assert.equal(receipt.status, "terminated");
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.termination.message,
+      "Runtime adapter execution failed; details withheld from run receipts.");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+    assert.ok(!serializeRunReceipt(receipt).includes(secret));
+  }
+  assert.equal(inspected, 0);
+});
+
+test("returned adapter accessors, hostile proxies and malformed billing objects fail closed", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const secret = "sensitive-returned-adapter-value";
+  let accessorReads = 0;
+  const hostileGetter = () => {
+    accessorReads += 1;
+    throw new Error(secret);
+  };
+  const withGetter = (base, key) =>
+    Object.defineProperty(base, key, { enumerable: true, get: hostileGetter });
+
+  const returned = [
+    null,
+    withGetter({ externalCalls: 1 }, "costUnits"),
+    withGetter({ externalCalls: 1 }, "providerMeter"),
+    { externalCalls: 1, providerMeter: withGetter({
+      receiptId: "fake-receipt", source: "fixture",
+    }, "amountUsd") },
+    { artifact: withGetter({
+      id: "artifact", mimeType: "application/json", storageRef: "artifact://safe",
+    }, "storageRef") },
+    { artifact: {
+      id: "artifact", mimeType: "application/json", storageRef: "artifact://safe",
+      metadata: withGetter({}, "privateToken"),
+    } },
+    new Proxy({}, {
+      getOwnPropertyDescriptor: () => { throw new Error(secret); },
+    }),
+    new Proxy({}, {
+      getPrototypeOf: () => { throw new Error(secret); },
+    }),
+  ];
+  for (const [index, result] of returned.entries()) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => result;
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions(`hostile-adapter-return-${index}`),
+      adapters: fixture,
+    });
+    assert.equal(receipt.status, "terminated");
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.termination.message,
+      "Runtime adapter execution failed; details withheld from run receipts.");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+    assert.ok(!serializeRunReceipt(receipt).includes(secret));
+  }
+  assert.equal(accessorReads, 0);
+});
+
+test("nested artifact metadata snapshots preserve safe JSON without retaining adapter references", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const metadata = Object.create(null);
+  Object.defineProperty(metadata, "__proto__", {
+    value: "literal-value", enumerable: true, writable: true, configurable: true,
+  });
+  metadata.levels = [{ label: "safe", count: 2 }, ["one", null, false]];
+  const fixture = adapters();
+  fixture.byNodeId.tool.execute = () => ({
+    artifact: {
+      id: "nested-safe-artifact",
+      mimeType: "application/json",
+      storageRef: "artifact://nested-safe",
+      metadata,
+    },
+  });
+  const receipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("safe-nested-metadata"), adapters: fixture,
+  });
+  assert.equal(receipt.status, "completed");
+  assert.equal(receipt.artifacts.length, 1);
+  const stored = receipt.artifacts[0].metadata;
+  assert.equal(Object.getPrototypeOf(stored), Object.prototype);
+  assert.equal(Object.hasOwn(stored, "__proto__"), true);
+  assert.equal(stored.__proto__, "literal-value");
+  assert.deepEqual(stored.levels, [{ label: "safe", count: 2 }, ["one", null, false]]);
+  metadata.levels[0].count = 99;
+  metadata.levels[1].push("mutated");
+  assert.equal(stored.levels[0].count, 2);
+  assert.equal(stored.levels[1].length, 3);
+  assert.deepEqual(deserializeRunReceipt(serializeRunReceipt(receipt)), receipt);
+});
+
+test("hostile nested metadata fails closed without evaluating accessors or leaking payloads", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const secret = "private-nested-adapter-canary";
+  let invoked = 0;
+  const getter = {};
+  Object.defineProperty(getter, "token", {
+    enumerable: true,
+    get() { invoked += 1; throw new Error(secret); },
+  });
+  const toJSON = { toJSON() { invoked += 1; throw new Error(secret); } };
+  const cyclic = {};
+  cyclic.self = cyclic;
+  let deep = { value: "bottom" };
+  for (let i = 0; i < 18; i += 1) deep = { child: deep };
+  const proxy = new Proxy({}, {
+    ownKeys() { throw new Error(secret); },
+  });
+  const fixtures = [
+    { nested: getter },
+    { nested: toJSON },
+    { nested: cyclic },
+    { nested: deep },
+    { nested: proxy },
+    { nested: new Date(NOW) },
+    { nested: 2n },
+    { nested: Array.from({ length: 2050 }, () => "x") },
+  ];
+  for (const [index, metadata] of fixtures.entries()) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => ({
+      externalCalls: 1,
+      providerMeter: {
+        amountUsd: 0.01, receiptId: `unsafe-${index}`, source: "fixture",
+      },
+      artifact: {
+        id: "hostile-artifact", mimeType: "application/json",
+        storageRef: "artifact://hostile", metadata,
+      },
+    });
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions(`hostile-nested-metadata-${index}`), adapters: fixture,
+    });
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.termination.message,
+      "Runtime adapter execution failed; details withheld from run receipts.");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+    assert.equal(receipt.artifacts.length, 0);
+    assert.ok(!serializeRunReceipt(receipt).includes(secret));
+  }
+  assert.equal(invoked, 0);
 });

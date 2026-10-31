@@ -1,3 +1,5 @@
+import type { RunReceipt } from "@hex-neural/runtime";
+
 export type SourceHealth = "HEALTHY" | "DEGRADED" | "UNAVAILABLE";
 export type HealthState = "HEALTHY" | "DEGRADED" | "UNHEALTHY" | "UNKNOWN";
 export type CostKind = "provider" | "model" | "tool" | "compute" | "storage" | "egress";
@@ -166,30 +168,80 @@ export function deriveHealth(metrics: RunMetricsV1): HealthState {
 }
 
 const REDACTED = "[REDACTED]";
-const forbiddenKey = /(authorization|token|secret|password|credential|payload|prompt|requestbody|responsebody|rawbody)/i;
-const sensitiveString = /(bearer\s+[a-z0-9._~+\/-]+=*|sk-[a-z0-9_-]{8,})/i;
+const forbiddenKey = /(authorization|token|secret|password|credential|payload|prompt|requestbody|responsebody|rawbody|api[_-]?key|access[_-]?key|private[_-]?key|cookie|session[_-]?id|signature|signed[_-]?url)/i;
+const sensitiveString = /((?:bearer|basic)\s+[a-z0-9._~+\/-]+=*|sk-[a-z0-9_-]{8,}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|session[_-]?token)\s*[:=]\s*[^\s&]+|https?:\/\/[^\/\s@]+:[^\/\s@]+@|[?&#](?:token|key|sig|signature|secret|session[_-]?id|x-amz-(?:signature|credential|security-token)|x-goog-(?:signature|credential))\s*=\s*[^&#\s]+|(?:gh[pousr]_[a-z0-9_]{16,}|github_pat_[a-z0-9_]{16,}))/i;
 
-function redactValue(value: unknown): unknown {
+// Untrusted adapter attributes are never allowed to exhaust the UI stack or
+// invoke property getters while rendering telemetry. Oversized/exotic data is
+// replaced, not partially logged: omitted fields must not silently leak.
+const MAX_TELEMETRY_DEPTH = 32;
+const MAX_TELEMETRY_ENTRIES = 256;
+
+function redactValue(value: unknown, visited: WeakSet<object>, depth = 0): unknown {
   if (typeof value === "string") return sensitiveString.test(value) ? REDACTED : value;
-  if (Array.isArray(value)) return value.map(redactValue);
-  if (value && typeof value === "object") return redactTelemetry(value as Record<string, unknown>);
-  return value;
+  if (value === null || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value !== "object") return REDACTED;
+  if (depth >= MAX_TELEMETRY_DEPTH || visited.has(value)) return REDACTED;
+  visited.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (value.length > MAX_TELEMETRY_ENTRIES) return REDACTED;
+      return Array.from({ length: value.length }, (_, index) => {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        return descriptor && "value" in descriptor
+          ? redactValue(descriptor.value, visited, depth + 1)
+          : REDACTED;
+      });
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return REDACTED;
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const entries = Object.entries(descriptors).filter(([, descriptor]) => descriptor.enumerable);
+    if (entries.length > MAX_TELEMETRY_ENTRIES) return REDACTED;
+    return Object.fromEntries(entries.map(([key, descriptor]) => [
+      key,
+      forbiddenKey.test(key) || !("value" in descriptor)
+        ? REDACTED
+        : redactValue(descriptor.value, visited, depth + 1),
+    ]));
+  } catch {
+    // Hostile proxies, revoked objects and failing reflection are untrusted.
+    return REDACTED;
+  }
 }
 
 export function redactTelemetry(attributes: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(attributes).map(([key, value]) => [
-      key,
-      forbiddenKey.test(key) ? REDACTED : redactValue(value),
-    ]),
-  );
+  const safe = redactValue(attributes, new WeakSet<object>());
+  return safe !== null && typeof safe === "object" && !Array.isArray(safe)
+    ? safe as Record<string, unknown>
+    : { _telemetry: REDACTED };
+}
+
+// Root log records are also untrusted. Spreading or reading a property
+// directly could execute an adapter-supplied getter before redaction.
+function ownLogData(entry: unknown, key: keyof LogEntryV1): unknown {
+  if (entry === null || typeof entry !== "object") return undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(entry, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined; // Revoked/hostile proxy: fail closed.
+  }
 }
 
 export function sanitizeLogEntry(entry: LogEntryV1): LogEntryV1 {
+  const id = ownLogData(entry, "id");
+  const level = ownLogData(entry, "level");
+  const message = ownLogData(entry, "message");
+  const attributes = ownLogData(entry, "attributes");
   return {
-    ...entry,
-    message: sensitiveString.test(entry.message) ? REDACTED : entry.message,
-    attributes: redactTelemetry(entry.attributes),
+    id: typeof id === "string" && id.length <= 256 && !sensitiveString.test(id)
+      ? id : REDACTED,
+    level: level === "debug" || level === "info" || level === "warn" || level === "error"
+      ? level : "warn",
+    message: typeof message === "string" && message.length <= 8192 && !sensitiveString.test(message)
+      ? message : REDACTED,
+    attributes: redactTelemetry(attributes as Record<string, unknown>),
   };
 }
 
@@ -205,6 +257,12 @@ export function virtualizeLogWindow(
 }
 
 
+export interface MeteredRuntimeTraceV1 {
+  traceId: string;
+  externalCalls: number;
+  providerMeter?: { amountUsd: number; receiptId: string; source: string };
+}
+
 export interface RuntimeReceiptProjectionV1 {
   runId: string;
   graphId: string;
@@ -219,6 +277,10 @@ export interface RuntimeReceiptProjectionV1 {
   maxCostUnits: number | null;
   status: "completed" | "terminated";
   terminationCode: string;
+  /** Actual runtime trace from a provider adapter, not a synthetic USD conversion. */
+  providerTrace?: MeteredRuntimeTraceV1[];
+  /** From the complete RunReceipt.totals.externalCalls, not the filtered trace. */
+  totalExternalCalls?: number;
 }
 
 export interface RuntimeUnitBudgetEvidenceV1 {
@@ -231,6 +293,39 @@ export interface RuntimeUnitBudgetEvidenceV1 {
 export interface RuntimeObservabilityProjectionV1 {
   snapshot: ObservabilitySnapshotV1;
   runtimeBudget: RuntimeUnitBudgetEvidenceV1;
+}
+
+/**
+ * Canonical adapter from a G-200 runtime-produced receipt to obs.v1.
+ * The external-call denominator is taken from the complete run totals, never
+ * reconstructed from a filtered trace or supplied independently by the UI.
+ * Provider charges still require authenticated billing evidence upstream;
+ * a typed adapter meter alone is not an independently verified invoice.
+ */
+export function projectRecordedRuntimeReceipt(
+  receipt: Readonly<RunReceipt>,
+  maxCostUnits: number | null,
+  correlation: Pick<RuntimeReceiptProjectionV1,
+    "clusterId" | "replicaId" | "generationId" | "messageId"> = {},
+): RuntimeObservabilityProjectionV1 {
+  return projectRuntimeReceipt({
+    ...correlation,
+    runId: receipt.runId,
+    graphId: receipt.graphId,
+    checkpointId: receipt.checkpoints.at(-1)?.id,
+    runtimeMs: receipt.totals.runtimeMs,
+    processedSignals: receipt.totals.processedSignals,
+    costUnits: receipt.totals.costUnits,
+    maxCostUnits,
+    status: receipt.status,
+    terminationCode: receipt.termination.code,
+    totalExternalCalls: receipt.totals.externalCalls,
+    providerTrace: receipt.trace.map((event) => ({
+      traceId: event.traceId,
+      externalCalls: event.externalCalls,
+      ...(event.providerMeter === undefined ? {} : { providerMeter: { ...event.providerMeter } }),
+    })),
+  });
 }
 
 const runtimeCostKinds: CostKind[] = [
@@ -272,6 +367,47 @@ export function projectRuntimeReceipt(
       "UNAVAILABLE",
     ),
   }));
+
+
+  // Only a fully metered and uniquely referenced set of external calls
+  // can expose an adapter-reported provider USD subtotal. Other costs
+  // remain UNKNOWN; this does not claim a complete end-to-end invoice.
+  const trace = receipt.providerTrace ?? [];
+  const billable = trace.filter((event) => event.externalCalls > 0);
+  const expectedCalls = receipt.totalExternalCalls;
+  // A valid subset is not a complete bill. Without the independent run total,
+  // omitted trace events or a single receipt for multiple calls remain UNKNOWN.
+  const completeCoverage =
+    expectedCalls !== undefined && Number.isSafeInteger(expectedCalls) && expectedCalls > 0 &&
+    trace.every((event) => Number.isSafeInteger(event.externalCalls) &&
+      (event.externalCalls === 0 ? event.providerMeter === undefined : event.externalCalls === 1)) &&
+    billable.length === expectedCalls;
+  if (completeCoverage) {
+    const seenReceipts = new Set<string>();
+    let usd = 0;
+    let metered = true;
+    for (const event of billable) {
+      const meter = event.providerMeter;
+      if (!meter || !event.traceId || !Number.isFinite(meter.amountUsd) ||
+          meter.amountUsd < 0 || !meter.receiptId?.trim() || !meter.source?.trim() ||
+          seenReceipts.has(meter.receiptId)) {
+        metered = false;
+        break;
+      }
+      seenReceipts.add(meter.receiptId);
+      usd += meter.amountUsd;
+      if (!Number.isFinite(usd)) {
+        metered = false;
+        break;
+      }
+    }
+    if (metered) {
+      costs[0] = {
+        ...costs[0],
+        actualUsd: known(usd, "obs.v1:adapter-reported-provider-meter-receipts"),
+      };
+    }
+  }
 
   const invalidRuntimeUnits = !Number.isFinite(receipt.costUnits) || receipt.costUnits < 0 ||
     (receipt.maxCostUnits !== null && (!Number.isFinite(receipt.maxCostUnits) || receipt.maxCostUnits < 0));
