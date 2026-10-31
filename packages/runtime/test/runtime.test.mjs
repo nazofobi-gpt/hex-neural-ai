@@ -652,3 +652,91 @@ test("returned adapter accessors, hostile proxies and malformed billing objects 
   }
   assert.equal(accessorReads, 0);
 });
+
+test("nested artifact metadata snapshots preserve safe JSON without retaining adapter references", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const metadata = Object.create(null);
+  Object.defineProperty(metadata, "__proto__", {
+    value: "literal-value", enumerable: true, writable: true, configurable: true,
+  });
+  metadata.levels = [{ label: "safe", count: 2 }, ["one", null, false]];
+  const fixture = adapters();
+  fixture.byNodeId.tool.execute = () => ({
+    artifact: {
+      id: "nested-safe-artifact",
+      mimeType: "application/json",
+      storageRef: "artifact://nested-safe",
+      metadata,
+    },
+  });
+  const receipt = runExecutableGraph(compiled.executable, {
+    ...runOptions("safe-nested-metadata"), adapters: fixture,
+  });
+  assert.equal(receipt.status, "completed");
+  assert.equal(receipt.artifacts.length, 1);
+  const stored = receipt.artifacts[0].metadata;
+  assert.equal(Object.getPrototypeOf(stored), Object.prototype);
+  assert.equal(Object.hasOwn(stored, "__proto__"), true);
+  assert.equal(stored.__proto__, "literal-value");
+  assert.deepEqual(stored.levels, [{ label: "safe", count: 2 }, ["one", null, false]]);
+  metadata.levels[0].count = 99;
+  metadata.levels[1].push("mutated");
+  assert.equal(stored.levels[0].count, 2);
+  assert.equal(stored.levels[1].length, 3);
+  assert.deepEqual(deserializeRunReceipt(serializeRunReceipt(receipt)), receipt);
+});
+
+test("hostile nested metadata fails closed without evaluating accessors or leaking payloads", () => {
+  const compiled = compileGraph(chainGraph(), 42, policy());
+  assert.equal(compiled.ok, true);
+  const secret = "private-nested-adapter-canary";
+  let invoked = 0;
+  const getter = {};
+  Object.defineProperty(getter, "token", {
+    enumerable: true,
+    get() { invoked += 1; throw new Error(secret); },
+  });
+  const toJSON = { toJSON() { invoked += 1; throw new Error(secret); } };
+  const cyclic = {};
+  cyclic.self = cyclic;
+  let deep = { value: "bottom" };
+  for (let i = 0; i < 18; i += 1) deep = { child: deep };
+  const proxy = new Proxy({}, {
+    ownKeys() { throw new Error(secret); },
+  });
+  const fixtures = [
+    { nested: getter },
+    { nested: toJSON },
+    { nested: cyclic },
+    { nested: deep },
+    { nested: proxy },
+    { nested: new Date(NOW) },
+    { nested: 2n },
+    { nested: Array.from({ length: 2050 }, () => "x") },
+  ];
+  for (const [index, metadata] of fixtures.entries()) {
+    const fixture = adapters();
+    fixture.byNodeId.tool.execute = () => ({
+      externalCalls: 1,
+      providerMeter: {
+        amountUsd: 0.01, receiptId: `unsafe-${index}`, source: "fixture",
+      },
+      artifact: {
+        id: "hostile-artifact", mimeType: "application/json",
+        storageRef: "artifact://hostile", metadata,
+      },
+    });
+    const receipt = runExecutableGraph(compiled.executable, {
+      ...runOptions(`hostile-nested-metadata-${index}`), adapters: fixture,
+    });
+    assert.equal(receipt.termination.code, "ADAPTER_FAILED");
+    assert.equal(receipt.termination.message,
+      "Runtime adapter execution failed; details withheld from run receipts.");
+    assert.deepEqual(receipt.trace.map((event) => event.nodeId), ["input", "transform"]);
+    assert.equal(receipt.totals.externalCalls, 0);
+    assert.equal(receipt.artifacts.length, 0);
+    assert.ok(!serializeRunReceipt(receipt).includes(secret));
+  }
+  assert.equal(invoked, 0);
+});
