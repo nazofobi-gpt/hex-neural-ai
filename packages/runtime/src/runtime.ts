@@ -168,7 +168,7 @@ function snapshotAdapterResult(value: RuntimeAdapterResult): RuntimeAdapterResul
         return copy;
       }
       if (!plainRecord(value)) throw new Error("Invalid nested adapter metadata.");
-      const copy: Record<string, unknown> = Object.create(null);
+      const copy: Record<string, unknown> = {};
       for (const key of Object.keys(value)) {
         Object.defineProperty(copy, key, {
           value: snapshotJson(ownData(value, key), depth + 1),
