@@ -142,16 +142,46 @@ function snapshotAdapterResult(value: RuntimeAdapterResult): RuntimeAdapterResul
   if (metadata !== undefined && !plainRecord(metadata)) {
     throw new Error("Invalid adapter artifact metadata.");
   }
-  // Snapshot metadata keys too: a returned accessor must not run during
-  // later JSON receipt serialization. Nested values are still opaque data.
-  const safeMetadata: Record<string, unknown> = {};
-  if (metadata && plainRecord(metadata)) {
-    for (const key of Object.keys(metadata)) {
-      Object.defineProperty(safeMetadata, key, {
-        value: ownData(metadata, key), writable: true, enumerable: true, configurable: true,
-      });
+  // Clone nested JSON metadata before it reaches run receipt serialization.
+  // Do not invoke adapter-controlled getters, proxies or toJSON methods.
+  const visited = new WeakSet<object>();
+  let visitedNodes = 0;
+  function snapshotJson(value: unknown, depth = 0): unknown {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (value === undefined) return undefined;
+    if (typeof value !== "object" || depth >= 16 || ++visitedNodes > 2048) {
+      throw new Error("Unsafe adapter metadata value.");
+    }
+    if (visited.has(value)) throw new Error("Cyclic adapter metadata.");
+    visited.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const length = ownData(value, "length");
+        if (typeof length !== "number" || !Number.isSafeInteger(length) || length > 2048) {
+          throw new Error("Invalid adapter metadata array.");
+        }
+        const copy: unknown[] = [];
+        for (let index = 0; index < length; index += 1) {
+          copy.push(snapshotJson(ownData(value, String(index)), depth + 1));
+        }
+        return copy;
+      }
+      if (!plainRecord(value)) throw new Error("Invalid nested adapter metadata.");
+      const copy: Record<string, unknown> = Object.create(null);
+      for (const key of Object.keys(value)) {
+        Object.defineProperty(copy, key, {
+          value: snapshotJson(ownData(value, key), depth + 1),
+          enumerable: true, writable: true, configurable: true,
+        });
+      }
+      return copy;
+    } finally {
+      visited.delete(value);
     }
   }
+  const safeMetadata: Record<string, unknown> = metadata === undefined
+    ? {} : snapshotJson(metadata) as Record<string, unknown>;
   return {
     payloadRef: ownData(value, "payloadRef") as RuntimeAdapterResult["payloadRef"],
     schema: ownData(value, "schema") as RuntimeAdapterResult["schema"],
